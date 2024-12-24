@@ -32,7 +32,7 @@ MODULE TOOLSUBS
       SUBROUTINE GetAMSR_L1R_NRT_subset(filename, tb_time_seconds, &
           tb_10v, tb_10h, tb_18v, tb_18h, &
           tb_23v, tb_23h, tb_36v, tb_36h, &
-          tb_89v, tb_89h, lat_89A, lon_89A, &
+          tb_89v, tb_89h, lat, lon, &
           scan_qual_flag, pixel_qual_flag, Land_Ocean_flag, &
           n, m, ierr)
 
@@ -49,7 +49,7 @@ MODULE TOOLSUBS
       integer*4, allocatable, intent(out) :: pixel_qual_flag(:,:), Land_Ocean_flag(:,:)
       !real*4, allocatable, intent(out) :: sc_nadir_angle(:)
       !real*4, allocatable, intent(out) :: antenna_scan_angle(:,:)
-      integer, intent(out) :: m, n
+      integer, intent(out) :: m, n, m89, n89 ! m89 & n89 are for the 89GHz band for which lat and lon are provided
       integer, intent(out) :: ierr
 
 #if (defined USE_HDF5)
@@ -200,7 +200,7 @@ MODULE TOOLSUBS
       end if
 
       dataset = "Latitude of Observation Point for 89A"
-      call get_dataset_real4_2d(file_id, dataset, n, m,lat_89A, ierr)
+      call get_dataset_real4_2d(file_id, dataset, n89, m89,lat_89A, ierr)
       if (ierr == 1) then
          call h5fclose_f(file_id, hdferr)
          call h5close_f(hdferr)
@@ -209,14 +209,19 @@ MODULE TOOLSUBS
       end if
 
       dataset = "Longitude of Observation Point for 89A"
-      call get_dataset_real4_2d(file_id, dataset, n, m,lon_89A, ierr)
+      call get_dataset_real4_2d(file_id, dataset, n89, m89,lon_89A, ierr)
       if (ierr == 1) then
          call h5fclose_f(file_id, hdferr)
          call h5close_f(hdferr)
          call freeall(ierr)
          return
       end if     
+      
+      ! Resample lat/lon using zoom
 
+      call zoom_2d(lat_89A, (/ n89, m89 /), lat, (/ n, m /))
+      call zoom_2d(lon_89A, (/ n89, m89 /), lon, (/ n, m /))
+      
       dataset = "Scan Data Quality"
       call get_dataset_integer2_2d(file_id, dataset, n, m, &
            scan_qual_flag, ierr)
@@ -1193,7 +1198,55 @@ MODULE TOOLSUBS
           ierr = 1
           return
         end subroutine freeall
-#else
+
+        subroutine zoom_2d(input, dims_in, output, dims_out) 
+           implicit none
+           integer(hsize_t), intent(in) :: dims_in(2), dims_out(2)
+           real, intent(in) :: input(dims_in(1), dims_in(2))
+           real, intent(out) :: output(dims_out(1), dims_out(2))
+           
+           real :: x_scale, y_scale, x, y
+           integer :: i, j, x1, x2, y1, y2
+           real :: dx, dy
+           real :: c11, c12, c21, c22
+           real :: f1, f2
+           
+           ! Compute scaling factors
+           x_scale = real(dims_in(1) - 1) / real(dims_out(1) - 1)
+           y_scale = real(dims_in(2) - 1) / real(dims_out(2) - 1)
+           
+           do j = 1, dims_out(2)
+               do i = 1, dims_out(1)
+                   ! Get input coordinates
+                   x = 1.0 + (i-1) * x_scale
+                   y = 1.0 + (j-1) * y_scale
+                   
+                   ! Get surrounding points
+                   x1 = int(x)
+                   x2 = min(x1 + 1, int(dims_in(1)))
+                   y1 = int(y)
+                   y2 = min(y1 + 1, int(dims_in(2)))
+                   
+                   ! Get interpolation weights
+                   dx = x - x1
+                   dy = y - y1
+                   
+                   ! Get corner values
+                   c11 = input(x1, y1)
+                   c12 = input(x1, y2)
+                   c21 = input(x2, y1)
+                   c22 = input(x2, y2)
+                   
+                   ! Bilinear interpolation
+                   f1 = (1.0-dx)*c11 + dx*c21
+                   f2 = (1.0-dx)*c12 + dx*c22
+                   output(i,j) = (1.0-dy)*f1 + dy*f2
+               end do
+           end do
+           
+        end subroutine zoom_2d
+        
+        #else
         ! Dummy version if LDT was compiled w/o HDF5 support.
         write(LDT_logunit,*) &
              '[ERR] GetSMAP_L1B_NRT called without HDF5 support!'
