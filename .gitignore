@@ -3,3 +3,15 @@
 *.d
 lis/runmodes/nuopc_cpl_mode/VERSION
 lis/runmodes/nuopc_cpl_mode/liblis_nuopc.a
+# Ignore Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Ignore nbconvert generated files
+*.nbconvert.ipynb
+
+# Ignore Vim swap files
+*.swp
+
+# (Optional) Ignore Python cache files and directories
+__pycache__/
+*.py[cod]

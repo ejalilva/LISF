@@ -49,6 +49,8 @@ module LDT_pluginIndices
    character*50, public,  parameter :: LDT_obsSimprocId   = "Observation simulator"
    character*50, public,  parameter :: LDT_LISHydropreprocId  = "LISHydro preprocessing for WRFHydro"
    character*50, public,  parameter :: LDT_SMAP_E_OPLId       = "OPL E SMAP soil moisture retrieval"  !Y.Kwon
+   character*50, public,  parameter :: LDT_AMSR_OPLId       = "OPL AMSR soil moisture retrieval"  !E.J
+   
 
 !-------------------------------------------------------------------------
 ! Domains
