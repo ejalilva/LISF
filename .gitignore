@@ -1,17 +1,39 @@
+# — Fortran build artifacts
 *.o
 *.mod
 *.d
-lis/runmodes/nuopc_cpl_mode/VERSION
-lis/runmodes/nuopc_cpl_mode/liblis_nuopc.a
-# Ignore Jupyter Notebook checkpoints
-.ipynb_checkpoints/
 
-# Ignore nbconvert generated files
+# — NUOPC coupling static lib & version file
+/lis/runmodes/nuopc_cpl_mode/VERSION
+/lis/runmodes/nuopc_cpl_mode/liblis_nuopc.a
+
+# — Jupyter
+**/.ipynb_checkpoints/
 *.nbconvert.ipynb
 
-# Ignore Vim swap files
-*.swp
-
-# (Optional) Ignore Python cache files and directories
+# — Python
 __pycache__/
 *.py[cod]
+
+# — Vim swap files
+*.swp
+
+# — Emacs backup files
+*~
+.#*
+
+# — IDE directories
+.idea/
+.vscode/
+
+# — OS files
+.DS_Store
+Thumbs.db
+
+# — Optional extras
+# log files
+*.log
+
+# temp files
+*.tmp
+

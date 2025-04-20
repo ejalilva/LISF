@@ -7,7 +7,7 @@
 ! Administrator of the National Aeronautics and Space Administration.
 ! All Rights Reserved.
 !-------------------------END NOTICE -- DO NOT EDIT-----------------------
-subroutine LDT_init_AMSR_OPL()
+subroutine LDT_init_amsr_opl()
 
    ! Imports
    use LDT_domainMod  , only: LDT_setDomainSpecs
@@ -27,4 +27,4 @@ subroutine LDT_init_AMSR_OPL()
    call LDT_amsr_oplInit()
    flush(LDT_logunit)
 
-end subroutine LDT_init_AMSR_OPL
+end subroutine LDT_init_amsr_opl

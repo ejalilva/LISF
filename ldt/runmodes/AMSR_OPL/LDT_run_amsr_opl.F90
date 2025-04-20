@@ -8,7 +8,7 @@
 ! All Rights Reserved.
 !-------------------------END NOTICE -- DO NOT EDIT-----------------------
 
-subroutine LDT_run_AMSR_OPL()
+subroutine LDT_run_amsr_opl()
 
    ! Imports
    use LDT_logMod
@@ -28,4 +28,4 @@ subroutine LDT_run_AMSR_OPL()
    write(LDT_logunit,*) " Finished LDT run "
    write(LDT_logunit,*) "--------------------------------"
 
-end subroutine LDT_run_AMSR_OPL
+end subroutine LDT_run_amsr_opl

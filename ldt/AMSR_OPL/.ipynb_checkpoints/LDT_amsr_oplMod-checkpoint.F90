@@ -23,10 +23,6 @@
 !                     Now we can run several LDT jobs in the same directory.
 
 ! =========================
-! E.J:
-! check with SMAPeOPL for lower and upper case when switched from L1B and SMAP and AMSR and L1R
-! watch the video with Mahdi and undrstand how the AMSR inputs are received from the config file
-! EJ: why there are two 6 AM and PM mu and sigma
 
 #include "LDT_misc.h"
 #include "LDT_NetCDF_inc.h"
@@ -48,17 +44,10 @@ module LDT_amsr_oplMod
     character*100        :: LISdir, LISsnowdir
     character*100        :: TAUdir, OMEGAfile, BDfile, &
                             CLAYfile, Hfile, LCfile
-    character*100        :: dailystats_ref, dailystats_lis
     character*10         :: date_curr
     integer              :: L1RresampWriteOpt, L1Rtype, AMSRfilelistSuffixNumber
-    integer              :: Teffscale
     integer              :: ntimes,ngrid
-    real, allocatable    :: mu_6am_ref(:), mu_6pm_ref(:) !(ngrid) ! EJ: why there are two 6 AM and PM where are they being used? why it is a vector?
-    real, allocatable    :: sigma_6am_ref(:), sigma_6pm_ref(:) !(ngrid)
-    real, allocatable    :: mu_6am_lis(:), mu_6pm_lis(:) !(ngrid)
-    real, allocatable    :: sigma_6am_lis(:), sigma_6pm_lis(:) !(ngrid)
-    integer, allocatable :: grid_col(:), grid_row(:) !(ngrid)
-    real, allocatable    :: ARFS_TB_10V(:,:), ARFS_TB_10H(:,:), ARFS_TB_18H(:,:), ARFS_TB_18V(:,:), ARFS_TB_23H(:,:), ARFS_TB_23V(:,:), ARFS_TB_36H(:,:), ARFS_TB_36V(:,:), ARFS_TB_89H(:,:), ARFS_TB_89V(:,:), ARFS_LAND_WATER_FRAC(:,:) ! E.J just TB_10H but other bands should be added as well
+    real, allocatable    :: ARFS_TB_10V(:,:), ARFS_TB_10H(:,:), ARFS_TB_18H(:,:), ARFS_TB_18V(:,:), ARFS_TB_23H(:,:), ARFS_TB_23V(:,:), ARFS_TB_36H(:,:), ARFS_TB_36V(:,:), ARFS_TB_89H(:,:), ARFS_TB_89V(:,:), ARFS_LAND_WATER_FRAC(:,:) 
     real                 :: SD_thold
     integer              :: num_ens ! Number of ensemble members in LIS USAF file.
     integer              :: num_tiles ! Total number of tiles in LIS USAF file.
@@ -131,33 +120,11 @@ contains
        call LDT_verify(rc, trim(cfg_entry)//" not specified")
     endif
 
-    ! ========= I think we can get rid of all of this with 37GHz band
     cfg_entry = "AMSR_OPL LIS soil temperature directory:" 
     call ESMF_ConfigFindLabel(LDT_config, trim(cfg_entry), rc=rc)
     call LDT_verify(rc, trim(cfg_entry)//" not specified")
     call ESMF_ConfigGetAttribute(LDT_config, AMSReOPL%LISdir, rc=rc)
     call LDT_verify(rc, trim(cfg_entry)//" not specified")
-
-    cfg_entry = "AMSR_OPL apply soil temperature bias correction:"  !0: off; 1: on
-    call ESMF_ConfigFindLabel(LDT_config, trim(cfg_entry), rc=rc)
-    call LDT_verify(rc, trim(cfg_entry)//" not specified")
-    call ESMF_ConfigGetAttribute(LDT_config, AMSReOPL%Teffscale, rc=rc)
-    call LDT_verify(rc, trim(cfg_entry)//" not specified")
-
-    if(AMSReOPL%Teffscale.eq.1) then
-       cfg_entry = "AMSR_OPL reference Teff daily statistics file:"
-       call ESMF_ConfigFindLabel(LDT_config, trim(cfg_entry), rc=rc)
-       call LDT_verify(rc, trim(cfg_entry)//" not specified")
-       call ESMF_ConfigGetAttribute(LDT_config, AMSReOPL%dailystats_ref, rc=rc)
-       call LDT_verify(rc, trim(cfg_entry)//" not specified")
-
-       cfg_entry = "AMSR_OPL LIS Teff daily statistics file:"
-       call ESMF_ConfigFindLabel(LDT_config, trim(cfg_entry), rc=rc)
-       call LDT_verify(rc, trim(cfg_entry)//" not specified")
-       call ESMF_ConfigGetAttribute(LDT_config, AMSReOPL%dailystats_lis, rc=rc)
-       call LDT_verify(rc, trim(cfg_entry)//" not specified")
-    endif
-    ! ========= I think we can get rid of all of this with 37GHz band
 
     cfg_entry = "AMSR_OPL LIS snow directory:"
     call ESMF_ConfigFindLabel(LDT_config, trim(cfg_entry), rc=rc)
@@ -194,7 +161,7 @@ contains
     call LDT_verify(rc, trim(cfg_entry)//" not specified")
     call ESMF_ConfigGetAttribute(LDT_config, AMSReOPL%ntiles_pergrid, rc=rc)
     call LDT_verify(rc, trim(cfg_entry)//" not specified")
-    if (AMSReOPL%num_tiles < 1) then
+    if (AMSReOPL%ntiles_pergrid < 1) then
        write(LDT_logunit,*) &
             '[ERR] LIS number of tiles per grid point must be at least 1!'
        write(LDT_logunit,*)'[ERR] Read in ', AMSReOPL%ntiles_pergrid
@@ -338,6 +305,9 @@ contains
        do i=1,fi
           hhmmss(i) = trim(amsr_L1R_filename(i)(L1R_dir_len+35:L1R_dir_len+40))
           hhmmss(i+1) = trim(amsr_L1R_filename(i+1)(L1R_dir_len+35:L1R_dir_len+40))
+          ! TODO (E.J): In the loop that reads file names, the code unconditionally accesses amsr_L1R_filename(i+1) (via the extracted substring to set hhmmss(i+1)). This may lead to an out‐of‐bounds error when processing the last file or when only a single file is present.
+
+
 
           ! use latest version (i.e., highest version number of N**** and/or 00*) E.J: how this is reading the latest version?
           if(i == fi) then
@@ -508,41 +478,8 @@ contains
              ! Now we have 3 teff for closest 3-hourly time interval in the day before AMSR retrieval (teff_01,teff_02,teff_03)
              ! Next step: Scale LIS teff to GEOS teff climatology
              ! get DOY
-             call get_doy(mo_pre,da_pre,doy_pre)
-             if(AMSReOPL%Teffscale.eq.1) then
-                ! get getattributes
-                call getattributes(AMSReOPL%dailystats_ref,&
-                                   AMSReOPL%ntimes,AMSReOPL%ngrid)
-                
-                ! read 6-yr daily mean and std dev
-                allocate(AMSReOPL%mu_6am_ref(AMSReOPL%ngrid))
-                allocate(AMSReOPL%mu_6pm_ref(AMSReOPL%ngrid))
-                allocate(AMSReOPL%sigma_6am_ref(AMSReOPL%ngrid))
-                allocate(AMSReOPL%sigma_6pm_ref(AMSReOPL%ngrid))
-                allocate(AMSReOPL%mu_6am_lis(AMSReOPL%ngrid))
-                allocate(AMSReOPL%mu_6pm_lis(AMSReOPL%ngrid))
-                allocate(AMSReOPL%sigma_6am_lis(AMSReOPL%ngrid))
-                allocate(AMSReOPL%sigma_6pm_lis(AMSReOPL%ngrid))
-                allocate(AMSReOPL%grid_col(AMSReOPL%ngrid))
-                allocate(AMSReOPL%grid_row(AMSReOPL%ngrid))
-
-                call read_DailyTeffStats_amsr(doy_pre)
-                ! scale
-                write (LDT_logunit,*) '[INFO] Scaling LIS effective soil temperature'
-                call scale_teff_amsr(n, Orbit, teff_01, teff_02, teff_03)
-                write (LDT_logunit,*) '[INFO] Finished scaling LIS effective soil temperature'
-
-                deallocate(AMSReOPL%mu_6am_ref)
-                deallocate(AMSReOPL%mu_6pm_ref)
-                deallocate(AMSReOPL%sigma_6am_ref)
-                deallocate(AMSReOPL%sigma_6pm_ref)
-                deallocate(AMSReOPL%mu_6am_lis)
-                deallocate(AMSReOPL%mu_6pm_lis)
-                deallocate(AMSReOPL%sigma_6am_lis)
-                deallocate(AMSReOPL%sigma_6pm_lis)
-                deallocate(AMSReOPL%grid_col)
-                deallocate(AMSReOPL%grid_row)
-             endif
+             call get_doy_amsr(mo_pre,da_pre,doy_pre)
+             
              read_L1Rdata = .false.
 
   ! Get snow information from LIS outputs
@@ -553,20 +490,38 @@ contains
 
   ! Retrieve AMSR soil moisture
              ! get DOY
-             call get_doy(mo,da,doy_curr)
+             call get_doy_amsr(mo,da,doy_curr)
 
              ! get UTC
-             call get_UTC(n,TIMEsec,UTChr)
+             call get_UTC_amsr(n,TIMEsec,UTChr)
 
              !write(LDT_logunit,*)'EMK: UTChr = ', UTChr
 
              ! retrieve
              ierr = LDT_create_subdirs(len_trim(AMSReOPL%SMoutdir), &
                 trim(AMSReOPL%SMoutdir))
+             
+             ! Ensure the directory exists (E.J)
+             if (ierr /= 0) then
+                write(LDT_logunit,*)'[ERR] Failed to create output directory: ', &
+                     trim(AMSReOPL%SMoutdir)
+                return
+             endif
+             
              call ARFSSMRETRIEVAL_AMSR(amsr_L1R_filename(i), &
                   teff_01, teff_02, teff_03, &
                   SnowDepth, doy_curr, UTChr, firsttime, secondtime, thirdtime)
-             deallocate(AMSReOPL%ARFS_TB_10H)
+             if (allocated(AMSReOPL%ARFS_TB_10H))   deallocate(AMSReOPL%ARFS_TB_10H)
+             if (allocated(AMSReOPL%ARFS_TB_10V))   deallocate(AMSReOPL%ARFS_TB_10V)
+             if (allocated(AMSReOPL%ARFS_TB_18H))   deallocate(AMSReOPL%ARFS_TB_18H)
+             if (allocated(AMSReOPL%ARFS_TB_18V))   deallocate(AMSReOPL%ARFS_TB_18V)
+             if (allocated(AMSReOPL%ARFS_TB_23H))   deallocate(AMSReOPL%ARFS_TB_23H)
+             if (allocated(AMSReOPL%ARFS_TB_23V))   deallocate(AMSReOPL%ARFS_TB_23V)
+             if (allocated(AMSReOPL%ARFS_TB_36H))   deallocate(AMSReOPL%ARFS_TB_36H)
+             if (allocated(AMSReOPL%ARFS_TB_36V))   deallocate(AMSReOPL%ARFS_TB_36V)
+             if (allocated(AMSReOPL%ARFS_TB_89H))   deallocate(AMSReOPL%ARFS_TB_89H)
+             if (allocated(AMSReOPL%ARFS_TB_89V))   deallocate(AMSReOPL%ARFS_TB_89V)
+             if (allocated(AMSReOPL%ARFS_LAND_WATER_FRAC)) deallocate(AMSReOPL%ARFS_LAND_WATER_FRAC)
           endif
        enddo
     endif
@@ -598,12 +553,12 @@ contains
        list_files = 'ls '//trim(ndir)//'/GW1AM2_'//&
                     trim(yyyymmddhh)// &
                     !'_*'//trim(orbit)// &
-                    '*_L1SN*'//'*.h5 > AMSR_L1R_filelist_'//trim(tmp)//'.dat'
+                    '*_L1SN'//'*.h5 > AMSR_L1R_filelist_'//trim(tmp)//'.dat'
     elseif(L1Rtype.eq.2) then   !Historical
        list_files = 'ls '//trim(ndir)//'/GW1AM2_'//&
                     trim(yyyymmddhh)// &
                     !'_*'//trim(orbit)// &
-                    '*_L1SG*'//'*.h5 > AMSR_L1R_filelist_'//trim(tmp)//'.dat'
+                    '*_L1SG'//'*.h5 > AMSR_L1R_filelist_'//trim(tmp)//'.dat'
     endif
 
     call system(trim(list_files))

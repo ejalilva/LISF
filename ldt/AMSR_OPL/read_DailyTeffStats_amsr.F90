@@ -10,11 +10,11 @@
 #include "LDT_misc.h"
 !BOP
 ! 
-! !ROUTINE: get_doy
-! \label{get_doy}
+! !ROUTINE: get_doy_amsr
+! \label{get_doy_amsr}
 !
 ! !INTERFACE:
-subroutine get_doy(mo,da,doy)
+subroutine get_doy_amsr(mo,da,doy)
 ! 
 ! !USES:
 
@@ -52,15 +52,15 @@ do imo = 1,mo
    endif
 enddo
 
-end subroutine get_doy
+end subroutine get_doy_amsr
 
 !BOP
 ! 
-! !ROUTINE: get_UTC
-! \label{get_UTC}
+! !ROUTINE: get_UTC_amsr
+! \label{get_UTC_amsr}
 !
 ! !INTERFACE:
-subroutine get_UTC(n,TIMEsec,UTChr)
+subroutine get_UTC_amsr(n,TIMEsec,UTChr)
 ! 
 ! !USES:
   use LDT_coreMod
@@ -155,4 +155,4 @@ subroutine get_UTC(n,TIMEsec,UTChr)
      enddo
   enddo
 
-end subroutine get_UTC
+end subroutine get_UTC_amsr

@@ -161,7 +161,7 @@ contains
     call LDT_verify(rc, trim(cfg_entry)//" not specified")
     call ESMF_ConfigGetAttribute(LDT_config, AMSReOPL%ntiles_pergrid, rc=rc)
     call LDT_verify(rc, trim(cfg_entry)//" not specified")
-    if (AMSReOPL%num_tiles < 1) then
+    if (AMSReOPL%ntiles_pergrid < 1) then
        write(LDT_logunit,*) &
             '[ERR] LIS number of tiles per grid point must be at least 1!'
        write(LDT_logunit,*)'[ERR] Read in ', AMSReOPL%ntiles_pergrid
@@ -305,6 +305,9 @@ contains
        do i=1,fi
           hhmmss(i) = trim(amsr_L1R_filename(i)(L1R_dir_len+35:L1R_dir_len+40))
           hhmmss(i+1) = trim(amsr_L1R_filename(i+1)(L1R_dir_len+35:L1R_dir_len+40))
+          ! TODO (E.J): In the loop that reads file names, the code unconditionally accesses amsr_L1R_filename(i+1) (via the extracted substring to set hhmmss(i+1)). This may lead to an out‐of‐bounds error when processing the last file or when only a single file is present.
+
+
 
           ! use latest version (i.e., highest version number of N**** and/or 00*) E.J: how this is reading the latest version?
           if(i == fi) then
@@ -475,7 +478,7 @@ contains
              ! Now we have 3 teff for closest 3-hourly time interval in the day before AMSR retrieval (teff_01,teff_02,teff_03)
              ! Next step: Scale LIS teff to GEOS teff climatology
              ! get DOY
-             call get_doy(mo_pre,da_pre,doy_pre)
+             call get_doy_amsr(mo_pre,da_pre,doy_pre)
              
              read_L1Rdata = .false.
 
@@ -487,20 +490,38 @@ contains
 
   ! Retrieve AMSR soil moisture
              ! get DOY
-             call get_doy(mo,da,doy_curr)
+             call get_doy_amsr(mo,da,doy_curr)
 
              ! get UTC
-             call get_UTC(n,TIMEsec,UTChr)
+             call get_UTC_amsr(n,TIMEsec,UTChr)
 
              !write(LDT_logunit,*)'EMK: UTChr = ', UTChr
 
              ! retrieve
              ierr = LDT_create_subdirs(len_trim(AMSReOPL%SMoutdir), &
                 trim(AMSReOPL%SMoutdir))
+             
+             ! Ensure the directory exists (E.J)
+             if (ierr /= 0) then
+                write(LDT_logunit,*)'[ERR] Failed to create output directory: ', &
+                     trim(AMSReOPL%SMoutdir)
+                return
+             endif
+             
              call ARFSSMRETRIEVAL_AMSR(amsr_L1R_filename(i), &
                   teff_01, teff_02, teff_03, &
                   SnowDepth, doy_curr, UTChr, firsttime, secondtime, thirdtime)
-             deallocate(AMSReOPL%ARFS_TB_10H)
+             if (allocated(AMSReOPL%ARFS_TB_10H))   deallocate(AMSReOPL%ARFS_TB_10H)
+             if (allocated(AMSReOPL%ARFS_TB_10V))   deallocate(AMSReOPL%ARFS_TB_10V)
+             if (allocated(AMSReOPL%ARFS_TB_18H))   deallocate(AMSReOPL%ARFS_TB_18H)
+             if (allocated(AMSReOPL%ARFS_TB_18V))   deallocate(AMSReOPL%ARFS_TB_18V)
+             if (allocated(AMSReOPL%ARFS_TB_23H))   deallocate(AMSReOPL%ARFS_TB_23H)
+             if (allocated(AMSReOPL%ARFS_TB_23V))   deallocate(AMSReOPL%ARFS_TB_23V)
+             if (allocated(AMSReOPL%ARFS_TB_36H))   deallocate(AMSReOPL%ARFS_TB_36H)
+             if (allocated(AMSReOPL%ARFS_TB_36V))   deallocate(AMSReOPL%ARFS_TB_36V)
+             if (allocated(AMSReOPL%ARFS_TB_89H))   deallocate(AMSReOPL%ARFS_TB_89H)
+             if (allocated(AMSReOPL%ARFS_TB_89V))   deallocate(AMSReOPL%ARFS_TB_89V)
+             if (allocated(AMSReOPL%ARFS_LAND_WATER_FRAC)) deallocate(AMSReOPL%ARFS_LAND_WATER_FRAC)
           endif
        enddo
     endif
@@ -532,12 +553,12 @@ contains
        list_files = 'ls '//trim(ndir)//'/GW1AM2_'//&
                     trim(yyyymmddhh)// &
                     !'_*'//trim(orbit)// &
-                    '*_L1SN*'//'*.h5 > AMSR_L1R_filelist_'//trim(tmp)//'.dat'
+                    '*_L1SN'//'*.h5 > AMSR_L1R_filelist_'//trim(tmp)//'.dat'
     elseif(L1Rtype.eq.2) then   !Historical
        list_files = 'ls '//trim(ndir)//'/GW1AM2_'//&
                     trim(yyyymmddhh)// &
                     !'_*'//trim(orbit)// &
-                    '*_L1SG*'//'*.h5 > AMSR_L1R_filelist_'//trim(tmp)//'.dat'
+                    '*_L1SG'//'*.h5 > AMSR_L1R_filelist_'//trim(tmp)//'.dat'
     endif
 
     call system(trim(list_files))

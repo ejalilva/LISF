@@ -39,14 +39,14 @@ MODULE TOOLSUBS_AMSR
 
       ! Arguments
       character(*), intent(in) :: filename
-      real*8, allocatable, intent(out) :: tb_time_seconds(:,:)
-      real*4, allocatable, intent(out) :: tb_10v(:,:), tb_10h(:,:), tb_18v(:,:), tb_18h(:,:), tb_23v(:,:), tb_23h(:,:), tb_36v(:,:), &
+      real*8, allocatable, intent(out) :: tb_time_seconds(:)
+      real, allocatable, intent(out) :: tb_10v(:,:), tb_10h(:,:), tb_18v(:,:), tb_18h(:,:), tb_23v(:,:), tb_23h(:,:), tb_36v(:,:), &
       tb_36h(:,:), tb_89v(:,:), tb_89h(:,:)
       integer*4, allocatable, intent(out) :: land_water_frac(:,:)
       real*4, allocatable, intent(out) :: lat89(:,:), lon89(:,:)
       real*4, allocatable, intent(out) :: lat(:,:), lon(:,:)
     ! integer*4, allocatable, intent(out) :: scan_qual_flag(:,:)
-      integer*4, allocatable, intent(out) :: pixel_qual_flag(:,:)
+      integer*2, allocatable, intent(out) :: pixel_qual_flag(:,:)
     !  integer*4, allocatable, intent(out) :: land_ocean_flag(:,:)
       integer, intent(out) :: m, n, m89, n89 ! m89 & n89 are for the 89GHz band for which lat and lon are provided
       integer :: i, j 
@@ -114,8 +114,7 @@ MODULE TOOLSUBS_AMSR
       ! Get the data
 
       dataset = "Scan Time"
-      call get_dataset_real8_2d(file_id, dataset, n, m, tb_time_seconds, &
-           ierr)
+      call get_dataset_real8_1d(file_id, dataset, n, tb_time_seconds,ierr)
       if (ierr == 1) then
          call h5fclose_f(file_id, hdferr)
          call h5close_f(hdferr)
@@ -265,6 +264,11 @@ MODULE TOOLSUBS_AMSR
         ! tb_89v →  (89.0GHz,V)
         ! land_water_frac → land_water_frac 
         ! Precip and snow flag at footprint level
+        ! Add after variable declarations, before HDF5 section
+        ALLOCATE(snow(n,m))
+        ALLOCATE(precip(n,m))
+        snow = 0
+        precip = 0
         do j = 1, int(m) !dims(2)
            do i = 1, int(n) ! dims(1)
               ! Check if it's land (using the Land_Ocean flag from your data(:,:,11))
@@ -326,7 +330,7 @@ MODULE TOOLSUBS_AMSR
         character(*), intent(in) :: dataset
         integer, intent(out) :: n
         integer, intent(out) :: m
-        integer*4, allocatable, intent(out) :: var2d(:,:)
+        integer*2, allocatable, intent(out) :: var2d(:,:)
         integer, intent(out) :: ierr
 
         ! Locals
@@ -917,14 +921,14 @@ MODULE TOOLSUBS_AMSR
                 trim(dataset)
            write(LDT_logunit,*)'[ERR] Expected ', H5T_FLOAT_F, &
                 ', found ', class
-           call h5tclose_f(datatype_id, hdferr)
-           call h5dclose_f(dataset_id, hdferr)
-           call h5fclose_f(file_id, hdferr)
-           call h5close_f(hdferr)
-           ierr = 1
-           return
+           !call h5tclose_f(datatype_id, hdferr)
+           !call h5dclose_f(dataset_id, hdferr)
+           !call h5fclose_f(file_id, hdferr)
+           !call h5close_f(hdferr)
+           !ierr = 1
+           !return
         end if
-
+        
         ! Check the size of the datatype
         call h5tget_size_f(datatype_id, size, hdferr)
         if (hdferr == -1) then
@@ -941,12 +945,12 @@ MODULE TOOLSUBS_AMSR
            write(LDT_logunit,*)'[ERR] Wrong byte size found for ', &
                 trim(dataset)
            write(LDT_logunit,*)'[ERR] Expected 4, found ', size
-           call h5tclose_f(datatype_id, hdferr)
-           call h5dclose_f(dataset_id, hdferr)
-           call h5fclose_f(file_id, hdferr)
-           call h5close_f(hdferr)
-           ierr = 1
-           return
+           !call h5tclose_f(datatype_id, hdferr)
+           !call h5dclose_f(dataset_id, hdferr)
+           !call h5fclose_f(file_id, hdferr)
+           !call h5close_f(hdferr)
+           !ierr = 1
+           !return
         end if
 
         ! Close the datatype
@@ -1277,7 +1281,7 @@ MODULE TOOLSUBS_AMSR
       end subroutine get_dataset_real8_2d
 
       ! Internal subroutine
-      subroutine get_dataset_real4_1d(file_id, dataset, n, var1d, ierr)
+      subroutine get_dataset_real8_1d(file_id, dataset, n, var1d, ierr)
 
         ! Defaults
         implicit none
@@ -1286,7 +1290,7 @@ MODULE TOOLSUBS_AMSR
         integer(HID_T), intent(in) :: file_id
         character(*), intent(in) :: dataset
         integer, intent(out) :: n
-        real*4, allocatable, intent(out) :: var1d(:)
+        real*8, allocatable, intent(out) :: var1d(:)
         integer, intent(out) :: ierr
 
         ! Locals
@@ -1377,10 +1381,10 @@ MODULE TOOLSUBS_AMSR
            ierr = 1
            return
         end if
-        if (size .ne. 4) then
+        if (size .ne. 8) then
            write(LDT_logunit,*)'[ERR] Wrong byte size found for ', &
                 trim(dataset)
-           write(LDT_logunit,*)'[ERR] Expected 4, found ', size
+           write(LDT_logunit,*)'[ERR] Expected 8, found ', size
            call h5tclose_f(datatype_id, hdferr)
            call h5dclose_f(dataset_id, hdferr)
            call h5fclose_f(file_id, hdferr)
@@ -1492,7 +1496,7 @@ MODULE TOOLSUBS_AMSR
         end if
 
         return
-      end subroutine get_dataset_real4_1d
+      end subroutine get_dataset_real8_1d
 
         ! Internal subroutine.  Warning -- deallocates memory in
         ! parent subroutine and resets two variables.  This is intended
@@ -1534,39 +1538,61 @@ MODULE TOOLSUBS_AMSR
            real :: c11, c12, c21, c22
            real :: f1, f2
            
-           ! Compute scaling factors
-           x_scale = real(dims_in(1) - 1) / real(dims_out(1) - 1)
-           y_scale = real(dims_in(2) - 1) / real(dims_out(2) - 1)
+           ! Safety check for dimensions
+           if (dims_in(1) < 2 .or. dims_in(2) < 2 .or. &
+               dims_out(1) < 1 .or. dims_out(2) < 1) then
+              print *, "Error: Invalid dimensions in zoom_2d"
+              return
+           end if
+           
+           ! Compute scaling factors - add safety to prevent divide by zero
+           if (dims_out(1) <= 1) then
+              x_scale = 1.0
+           else
+              x_scale = real(dims_in(1) - 1) / real(dims_out(1) - 1)
+           end if
+           
+           if (dims_out(2) <= 1) then
+              y_scale = 1.0
+           else
+              y_scale = real(dims_in(2) - 1) / real(dims_out(2) - 1)
+           end if
            
            do j = 1, dims_out(2)
-               do i = 1, dims_out(1)
-                   ! Get input coordinates
-                   x = 1.0 + (i-1) * x_scale
-                   y = 1.0 + (j-1) * y_scale
-                   
-                   ! Get surrounding points
-                   x1 = int(x)
-                   x2 = min(x1 + 1, int(dims_in(1)))
-                   y1 = int(y)
-                   y2 = min(y1 + 1, int(dims_in(2)))
-                   
-                   ! Get interpolation weights
-                   dx = x - x1
-                   dy = y - y1
-                   
-                   ! Get corner values
-                   c11 = input(x1, y1)
-                   c12 = input(x1, y2)
-                   c21 = input(x2, y1)
-                   c22 = input(x2, y2)
-                   
-                   ! Bilinear interpolation
-                   f1 = (1.0-dx)*c11 + dx*c21
-                   f2 = (1.0-dx)*c12 + dx*c22
-                   output(i,j) = (1.0-dy)*f1 + dy*f2
-               end do
+              do i = 1, dims_out(1)
+                 ! Get input coordinates with bounds checking
+                 x = 1.0 + (i-1) * x_scale
+                 y = 1.0 + (j-1) * y_scale
+                 
+                 ! Get surrounding points with bounds checking
+                 x1 = int(x)
+                 x1 = max(1, min(x1, dims_in(1))) ! Ensure x1 is within bounds
+                 
+                 x2 = x1 + 1
+                 x2 = min(x2, dims_in(1)) ! Ensure x2 is within bounds
+                 
+                 y1 = int(y)
+                 y1 = max(1, min(y1, dims_in(2))) ! Ensure y1 is within bounds
+                 
+                 y2 = y1 + 1
+                 y2 = min(y2, dims_in(2)) ! Ensure y2 is within bounds
+                 
+                 ! Get interpolation weights
+                 dx = x - x1
+                 dy = y - y1
+                 
+                 ! Get corner values
+                 c11 = input(x1, y1)
+                 c12 = input(x1, y2)
+                 c21 = input(x2, y1)
+                 c22 = input(x2, y2)
+                 
+                 ! Bilinear interpolation
+                 f1 = (1.0-dx)*c11 + dx*c21
+                 f2 = (1.0-dx)*c12 + dx*c22
+                 output(i,j) = (1.0-dy)*f1 + dy*f2
+              end do
            end do
-           
         end subroutine zoom_2d
         
 #else
