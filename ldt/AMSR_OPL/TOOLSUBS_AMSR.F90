@@ -220,6 +220,21 @@ MODULE TOOLSUBS_AMSR
       end if     
       
       ! Resample lat/lon using zoom
+      write(LDT_logunit,*)'[DEBUG] lat89 dimensions:', n89, m89
+      write(LDT_logunit,*)'[DEBUG] lat dimensions:', n, m
+      write(LDT_logunit,*)'[DEBUG] Checking array allocation before zoom_2d'
+        if (.not. allocated(lat)) then
+            write(LDT_logunit,*)'[DEBUG] Allocating lat array with dimensions:', n, 'x', m
+            allocate(lat(n,m), stat=hdferr)
+            if (hdferr /= 0) then
+                write(LDT_logunit,*)'[ERR] Failed to allocate memory for lat array'
+                ierr = 1
+                call freeall(ierr)
+                return
+            endif
+            lat = 0.0
+        endif
+      write(LDT_logunit,*)'[DEBUG] Calling zoom_2d with:'
 
       call zoom_2d(lat89, (/ n89, m89 /), lat, (/ n, m /))
       call zoom_2d(lon89, (/ n89, m89 /), lon, (/ n, m /))
@@ -1526,7 +1541,7 @@ MODULE TOOLSUBS_AMSR
           return
         end subroutine freeall
 
-        subroutine zoom_2d(input, dims_in, output, dims_out) 
+        subroutine zoom_2d(input, dims_in, output, dims_out)
            implicit none
            integer, intent(in) :: dims_in(2), dims_out(2)
            real*4, intent(in) :: input(dims_in(1), dims_in(2))
@@ -1542,6 +1557,8 @@ MODULE TOOLSUBS_AMSR
            if (dims_in(1) < 2 .or. dims_in(2) < 2 .or. &
                dims_out(1) < 1 .or. dims_out(2) < 1) then
               print *, "Error: Invalid dimensions in zoom_2d"
+              print *, "dims_in =", dims_in
+              print *, "dims_out =", dims_out
               return
            end if
            
