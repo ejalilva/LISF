@@ -220,24 +220,34 @@ MODULE TOOLSUBS_AMSR
       end if     
       
       ! Resample lat/lon using zoom
-      write(LDT_logunit,*)'[DEBUG] lat89 dimensions:', n89, m89
-      write(LDT_logunit,*)'[DEBUG] lat dimensions:', n, m
-      write(LDT_logunit,*)'[DEBUG] Checking array allocation before zoom_2d'
         if (.not. allocated(lat)) then
-            write(LDT_logunit,*)'[DEBUG] Allocating lat array with dimensions:', n, 'x', m
-            allocate(lat(n,m), stat=hdferr)
+            allocate(lat(n, m), stat=hdferr)
             if (hdferr /= 0) then
                 write(LDT_logunit,*)'[ERR] Failed to allocate memory for lat array'
                 ierr = 1
-                call freeall(ierr)
                 return
             endif
             lat = 0.0
         endif
-      write(LDT_logunit,*)'[DEBUG] Calling zoom_2d with:'
+        
+        if (.not. allocated(lon)) then
+            allocate(lon(n, m), stat=hdferr)
+            if (hdferr /= 0) then
+                write(LDT_logunit,*)'[ERR] Failed to allocate memory for lon array'
+                ierr = 1
+                return
+            endif
+            lon = 0.0
+        endif
+      write(LDT_logunit,*)'[DEBUG] lat89 dimensions(n89, m89):', n89, m89
+      write(LDT_logunit,*)'[DEBUG] lat dimensions (n, m):', n, m
 
-      call zoom_2d(lat89, (/ n89, m89 /), lat, (/ n, m /))
-      call zoom_2d(lon89, (/ n89, m89 /), lon, (/ n, m /))
+        write(LDT_logunit,*)'[DEBUG] lat89 dimensions:', size(lat89,1), size(lat89,2)
+        write(LDT_logunit,*)'[DEBUG] lat dimensions:', size(lat,1), size(lat,2)
+        
+        ! Pass dimensions in the correct order
+        call zoom_2d(lat89, (/size(lat89,1), size(lat89,2)/), lat, (/size(lat,1), size(lat,2)/))
+        call zoom_2d(lon89, (/size(lon89,1), size(lon89,2)/), lon, (/size(lon,1), size(lon,2)/))
      
       ! Reading quality flag data
       !dataset = "Scan Data Quality"
@@ -261,6 +271,7 @@ MODULE TOOLSUBS_AMSR
          call freeall(ierr)
          return
       end if
+
 
       dataset = "Land_Ocean Flag 6 to 36"
       call get_dataset_integer1_3d(file_id, dataset, n, m, 4, land_water_frac,ierr) ! here we sliced the 4th layer or 36 GHz channel that has a more detailed land water fraction map
@@ -437,16 +448,18 @@ MODULE TOOLSUBS_AMSR
            ierr = 1
            return
         end if
+        
+! ==================== (E.J) not checking for the byte size and sign (uncomment when RFI flag is included)
         if (size .ne. 2) then
            write(LDT_logunit,*)'[ERR] Wrong byte size found for ', &
                 trim(dataset)
            write(LDT_logunit,*)'[ERR] Expected 2, found ', size
-           call h5tclose_f(datatype_id, hdferr)
-           call h5dclose_f(dataset_id, hdferr)
-           call h5fclose_f(file_id, hdferr)
-           call h5close_f(hdferr)
-           ierr = 1
-           return
+           !call h5tclose_f(datatype_id, hdferr)
+           !call h5dclose_f(dataset_id, hdferr)
+           !call h5fclose_f(file_id, hdferr)
+           !call h5close_f(hdferr)
+           !ierr = 1
+           !return
         end if
 
         ! Check the sign type of the datatype.  Should be unsigned.
@@ -454,25 +467,26 @@ MODULE TOOLSUBS_AMSR
         if (hdferr == -1) then
            write(LDT_logunit,*)'[ERR] Cannot get sign type for ', &
                 trim(dataset)
-           call h5tclose_f(datatype_id, hdferr)
-           call h5dclose_f(dataset_id, hdferr)
-           call h5fclose_f(file_id, hdferr)
-           call h5close_f(hdferr)
-           ierr = 1
-           return
+           !call h5tclose_f(datatype_id, hdferr)
+           !call h5dclose_f(dataset_id, hdferr)
+           !call h5fclose_f(file_id, hdferr)
+           !call h5close_f(hdferr)
+           !ierr = 1
+           !return
         end if
         if (sign .ne. H5T_SGN_NONE_F) then
            write(LDT_logunit,*)'[ERR] Wrong sign type found for ', &
                 trim(dataset)
            write(LDT_logunit,*)'[ERR] Expected ', H5T_SGN_NONE_F, &
                 ', found ', sign
-           call h5tclose_f(datatype_id, hdferr)
-           call h5dclose_f(dataset_id, hdferr)
-           call h5fclose_f(file_id, hdferr)
-           call h5close_f(hdferr)
-           ierr = 1
-           return
+           !call h5tclose_f(datatype_id, hdferr)
+           !call h5dclose_f(dataset_id, hdferr)
+           !call h5fclose_f(file_id, hdferr)
+           !call h5close_f(hdferr)
+           !ierr = 1
+           !return
         end if
+! ===================== (E.J) not checking for the byte size and sign
 
         ! Close the datatype
         call h5tclose_f(datatype_id, hdferr)
@@ -583,277 +597,92 @@ MODULE TOOLSUBS_AMSR
       end subroutine get_dataset_integer2_2d
 
       ! Internal subroutine
-      subroutine get_dataset_integer1_3d(file_id, dataset, n, m, slice_index, var2d,ierr)
-
-        ! Defaults
+    subroutine get_dataset_integer1_3d(file_id, dataset, n, m, layer, var2d, ierr)
         implicit none
-
-        ! Arguments
         integer(HID_T), intent(in) :: file_id
         character(*), intent(in) :: dataset
-        integer, intent(out) :: n
-        integer, intent(out) :: m
+        integer, intent(in) :: n, m  ! n = 243 (observations), m = 2035 (scans) 
+        integer, intent(in) :: layer  ! Layer to extract (1-4)
         integer*4, allocatable, intent(out) :: var2d(:,:)
-        integer, intent(in) :: slice_index  ! New parameter
         integer, intent(out) :: ierr
-
-        ! Locals
-        integer(HID_T) :: dataset_id, datatype_id
-        integer(HID_T) :: dspace_id, mem_space_id
-        logical :: link_exists
+        
+        integer(HID_T) :: dataset_id, dataspace_id
         integer :: hdferr
-        integer(HSIZE_T) :: dims(3), maxdims(3)  ! Changed to 3D
-        integer(HSIZE_T) :: start(3), count(3)    ! For hyperslab
-        integer :: rank
-        integer :: class
-        integer(SIZE_T) :: size
-        integer :: sign
-    
+        integer*1, allocatable :: temp_data(:,:,:)  ! For uint8 data
+        logical :: link_exists
+        integer :: i, j
+        integer(HSIZE_T), dimension(3) :: dims3d  ! For the dimensions
+        
         ierr = 0
-
-        ! See if the dataset is in the file
+        
+        ! Check if dataset exists
         call h5lexists_f(file_id, trim(dataset), link_exists, hdferr)
-        if (hdferr == -1) then
-           write(LDT_logunit,*)'[ERR] Problem finding ', trim(dataset)
-           call h5fclose_f(file_id, hdferr)
-           call h5close_f(hdferr)
-           ierr = 1
-           return
+        if (.not. link_exists .or. hdferr /= 0) then
+            write(LDT_logunit,*) '[ERR] Dataset not found: ', trim(dataset)
+            ierr = 1
+            return
         endif
-        if (.not. link_exists) then
-           write(LDT_logunit,*)'[ERR] Nonexistent dataset ', trim(dataset)
-           call h5fclose_f(file_id, hdferr)
-           call h5close_f(hdferr)
-           ierr = 1
-           return
-        endif
-
-        ! Get the dataset id
+        
+        ! Open the dataset
         call h5dopen_f(file_id, trim(dataset), dataset_id, hdferr)
-        if (hdferr == -1) then
-           write(LDT_logunit,*)'[ERR] Cannot open dataset ', trim(dataset)
-           call h5fclose_f(file_id, hdferr)
-           call h5close_f(hdferr)
-           ierr = 1
-           return
-        end if
-
-        ! Get the datatype id
-        call h5dget_type_f(dataset_id, datatype_id, hdferr)
-        if (hdferr == -1) then
-           write(LDT_logunit,*)'[ERR] Cannot get datatype for ', &
-                trim(dataset)
-           call h5dclose_f(dataset_id, hdferr)
-           call h5fclose_f(file_id, hdferr)
-           call h5close_f(hdferr)
-           ierr = 1
-           return
-        end if
-
-        ! Check the datatype class
-        call h5tget_class_f(datatype_id, class, hdferr)
-        if (hdferr == -1) then
-           write(LDT_logunit,*)'[ERR] Cannot get class for ', &
-                trim(dataset)
-           call h5tclose_f(datatype_id, hdferr)
-           call h5dclose_f(dataset_id, hdferr)
-           call h5fclose_f(file_id, hdferr)
-           call h5close_f(hdferr)
-           ierr = 1
-           return
-        end if
-        if (class .ne. H5T_INTEGER_F) then
-           write(LDT_logunit,*)'[ERR] Bad class for ', &
-                trim(dataset)
-           write(LDT_logunit,*)'[ERR] Expected ', H5T_INTEGER_F, &
-                ', found ', class
-           call h5tclose_f(datatype_id, hdferr)
-           call h5dclose_f(dataset_id, hdferr)
-           call h5fclose_f(file_id, hdferr)
-           call h5close_f(hdferr)
-           ierr = 1
-           return
-        end if
-
-        ! Check the size of the datatype.
-        call h5tget_size_f(datatype_id, size, hdferr)
-        if (hdferr == -1) then
-           write(LDT_logunit,*)'[ERR] Cannot get size for ', &
-                trim(dataset)
-           call h5tclose_f(datatype_id, hdferr)
-           call h5dclose_f(dataset_id, hdferr)
-           call h5fclose_f(file_id, hdferr)
-           call h5close_f(hdferr)
-           ierr = 1
-           return
-        end if
-        
-        ! Check size (should be 1 byte for uint8)
-        call h5tget_size_f(datatype_id, size, hdferr)
-        if (size /= 1) then
-            write(LDT_logunit,*)'[ERR] Wrong byte size for ', trim(dataset)
-            write(LDT_logunit,*)'[ERR] Expected 1, found ', size
-            call h5tclose_f(datatype_id, hdferr)
-            call h5dclose_f(dataset_id, hdferr)
+        if (hdferr /= 0) then
+            write(LDT_logunit,*) '[ERR] Cannot open dataset: ', trim(dataset)
             ierr = 1
             return
-        end if
-
-        ! Check the sign type of the datatype.  Should be unsigned.
-        call h5tget_sign_f(datatype_id, sign, hdferr)
-        if (hdferr == -1) then
-           write(LDT_logunit,*)'[ERR] Cannot get sign type for ', &
-                trim(dataset)
-           call h5tclose_f(datatype_id, hdferr)
-           call h5dclose_f(dataset_id, hdferr)
-           call h5fclose_f(file_id, hdferr)
-           call h5close_f(hdferr)
-           ierr = 1
-           return
-        end if
-        if (sign .ne. H5T_SGN_NONE_F) then
-           write(LDT_logunit,*)'[ERR] Wrong sign type found for ', &
-                trim(dataset)
-           write(LDT_logunit,*)'[ERR] Expected ', H5T_SGN_NONE_F, &
-                ', found ', sign
-           call h5tclose_f(datatype_id, hdferr)
-           call h5dclose_f(dataset_id, hdferr)
-           call h5fclose_f(file_id, hdferr)
-           call h5close_f(hdferr)
-           ierr = 1
-           return
-        end if
-
-        ! Close the datatype
-        call h5tclose_f(datatype_id, hdferr)
-        if (hdferr == -1) then
-           write(LDT_logunit,*)'[ERR] Cannot close datatype for ', &
-                trim(dataset)
-           call h5dclose_f(dataset_id, hdferr)
-           call h5fclose_f(file_id, hdferr)
-           call h5close_f(hdferr)
-           ierr = 1
-           return
-        end if
-
-        ! Get the dspace id for the variable dimensions
-        call h5dget_space_f(dataset_id, dspace_id, hdferr)
-        if (hdferr == -1) then
-           write(LDT_logunit,*)'[ERR] Cannot find dimensions for ', &
-                trim(dataset)
-           call h5dclose_f(dataset_id, hdferr)
-           call h5fclose_f(file_id, hdferr)
-           call h5close_f(hdferr)
-           ierr = 1
-           return
-        end if
-
-        ! Get the rank of the dataset in the file.
-        call h5sget_simple_extent_ndims_f(dspace_id, rank, hdferr)
-        if (hdferr == -1) then
-           write(LDT_logunit,*)'[ERR] Cannot get rank for ', &
-                trim(dataset)
-           call h5sclose_f(dspace_id, hdferr)
-           call h5dclose_f(dataset_id, hdferr)
-           call h5fclose_f(file_id, hdferr)
-           call h5close_f(hdferr)
-           ierr = 1
-           return
-        end if
-
-        ! Check that the rank is 3.
-        if (rank .ne. 3) then
-           write(LDT_logunit,*) &
-                '[ERR] Wrong rank for ', trim(dataset), &
-                ', expected 3, found ', rank
-           call h5sclose_f(dspace_id, hdferr)
-           call h5dclose_f(dataset_id, hdferr)
-           call h5fclose_f(file_id, hdferr)
-           call h5close_f(hdferr)
-           ierr = 1
-           return
-        end if
-
-        ! Get the dimensions
-        call h5sget_simple_extent_dims_f(dspace_id, dims, maxdims, hdferr)
-        if (hdferr == -1) then
-           write(LDT_logunit,*)'[ERR] Cannot get dimensions for ', &
-                trim(dataset)
-           call h5sclose_f(dspace_id, hdferr)
-           call h5dclose_f(dataset_id, hdferr)
-           call h5fclose_f(file_id, hdferr)
-           call h5close_f(hdferr)
-           ierr = 1
-           return
-        end if
-
-        ! Check if slice_index is valid
-        if (slice_index < 1 .or. slice_index > dims(3)) then
-            write(LDT_logunit,*)'[ERR] Invalid slice index for ', trim(dataset)
-            call h5sclose_f(dspace_id, hdferr)
-            call h5dclose_f(dataset_id, hdferr)
-            ierr = 1
-            return
-        end if
-
-        ! Set up hyperslab selection
-        start = [0, 0, slice_index-1]  ! Convert to 0-based indexing
-        count = [dims(1), dims(2), 1_HSIZE_T]
-        
-        call h5sselect_hyperslab_f(dspace_id, H5S_SELECT_SET_F, start, count, hdferr)
-        
-        ! Create memory space for 2D slice
-        call h5screate_simple_f(2, dims(1:2), mem_space_id, hdferr)
-
-
-        ! Close access to the dataspace.
-        call h5sclose_f(dspace_id, hdferr)
-        if (hdferr == -1) then
-           write(LDT_logunit,*)'[ERR] Cannot close access to dataspace for ', &
-                trim(dataset)
-           call h5dclose_f(dataset_id, hdferr)
-           call h5fclose_f(file_id, hdferr)
-           call h5close_f(hdferr)
-           ierr = 1
-           return
-        end if
-
-        ! Allocate and initialize the array
-        n = dims(1)
-        m = dims(2)
-        allocate(var2d(n,m))
-        var2d = 0
-
-        ! Read the dataset.  Fortran doesn't have unsigned integers,
-        ! so we save the 16-bit unsigned integer in a 32-bit signed
-        ! integer (should have the room).
-        ! Read the dataset slice
-        call h5dread_f(dataset_id, H5T_NATIVE_INTEGER, var2d, dims(1:2), hdferr, &
-                       mem_space_id, dspace_id)        
-        
-        if (hdferr == -1) then
-           write(LDT_logunit,*)'[ERR] Cannot read dataset ', trim(dataset)
-           call h5dclose_f(dataset_id, hdferr)
-           call h5fclose_f(file_id, hdferr)
-           call h5close_f(hdferr)
-           ierr = 1
-           return
         endif
-
-        ! Close access to the dataset
+        
+        ! Allocate temporary array based on known dimensions from xarray analysis
+        ! Dimensions are (4, 2035, 243)
+        allocate(temp_data(4, m, n), stat=hdferr)
+        if (hdferr /= 0) then
+            write(LDT_logunit,*) '[ERR] Failed to allocate temporary array'
+            call h5dclose_f(dataset_id, hdferr)
+            ierr = 1
+            return
+        endif
+        
+        ! Set up the dimensions array
+        dims3d(1) = 4      ! Number of layers
+        dims3d(2) = m      ! Number of scans
+        dims3d(3) = n      ! Number of observations
+        
+        ! Read the entire dataset
+        call h5dread_f(dataset_id, H5T_NATIVE_INTEGER, temp_data, dims3d, hdferr)
+        if (hdferr /= 0) then
+            write(LDT_logunit,*) '[ERR] Failed to read dataset: ', trim(dataset)
+            deallocate(temp_data)
+            call h5dclose_f(dataset_id, hdferr)
+            ierr = 1
+            return
+        endif
+        
+        ! Close the dataset, we're done with it
         call h5dclose_f(dataset_id, hdferr)
-        if (hdferr == -1) then
-           write(LDT_Logunit,*)'[ERR] Problem closing dataset ', &
-                trim(dataset)
-           call h5fclose_f(file_id, hdferr)
-           call h5close_f(hdferr)
-           ierr = 1
-           return
-        end if
-
-        return
-      end subroutine get_dataset_integer1_3d
-      
+        
+        ! Allocate output array
+        if (allocated(var2d)) deallocate(var2d)
+        allocate(var2d(n, m), stat=hdferr)
+        if (hdferr /= 0) then
+            write(LDT_logunit,*) '[ERR] Failed to allocate output array'
+            deallocate(temp_data)
+            ierr = 1
+            return
+        endif
+        
+        ! Extract the requested layer and transpose to match expected format
+        ! Input is (layer, scan, obs) but output should be (obs, scan)
+        do j = 1, m  ! scans
+            do i = 1, n  ! observations
+                var2d(i, j) = int(temp_data(layer, j, i), kind=4)
+            end do
+        end do
+        
+        ! Clean up
+        deallocate(temp_data)
+        
+        write(LDT_logunit,*) '[INFO] Successfully read layer ', layer, ' from ', trim(dataset)
+    end subroutine get_dataset_integer1_3d
+        
       ! Internal subroutine
       subroutine get_dataset_real4_2d(file_id, dataset, n, m, var2d, ierr)
 
@@ -1542,74 +1371,59 @@ MODULE TOOLSUBS_AMSR
         end subroutine freeall
 
         subroutine zoom_2d(input, dims_in, output, dims_out)
-           implicit none
-           integer, intent(in) :: dims_in(2), dims_out(2)
-           real*4, intent(in) :: input(dims_in(1), dims_in(2))
-           real*4, intent(out) :: output(dims_out(1), dims_out(2))
-           
-           real :: x_scale, y_scale, x, y
-           integer :: i, j, x1, x2, y1, y2
-           real :: dx, dy
-           real :: c11, c12, c21, c22
-           real :: f1, f2
-           
-           ! Safety check for dimensions
-           if (dims_in(1) < 2 .or. dims_in(2) < 2 .or. &
-               dims_out(1) < 1 .or. dims_out(2) < 1) then
-              print *, "Error: Invalid dimensions in zoom_2d"
-              print *, "dims_in =", dims_in
-              print *, "dims_out =", dims_out
-              return
-           end if
-           
-           ! Compute scaling factors - add safety to prevent divide by zero
-           if (dims_out(1) <= 1) then
-              x_scale = 1.0
-           else
-              x_scale = real(dims_in(1) - 1) / real(dims_out(1) - 1)
-           end if
-           
-           if (dims_out(2) <= 1) then
-              y_scale = 1.0
-           else
-              y_scale = real(dims_in(2) - 1) / real(dims_out(2) - 1)
-           end if
-           
-           do j = 1, dims_out(2)
-              do i = 1, dims_out(1)
-                 ! Get input coordinates with bounds checking
-                 x = 1.0 + (i-1) * x_scale
-                 y = 1.0 + (j-1) * y_scale
-                 
-                 ! Get surrounding points with bounds checking
-                 x1 = int(x)
-                 x1 = max(1, min(x1, dims_in(1))) ! Ensure x1 is within bounds
-                 
-                 x2 = x1 + 1
-                 x2 = min(x2, dims_in(1)) ! Ensure x2 is within bounds
-                 
-                 y1 = int(y)
-                 y1 = max(1, min(y1, dims_in(2))) ! Ensure y1 is within bounds
-                 
-                 y2 = y1 + 1
-                 y2 = min(y2, dims_in(2)) ! Ensure y2 is within bounds
-                 
-                 ! Get interpolation weights
-                 dx = x - x1
-                 dy = y - y1
-                 
-                 ! Get corner values
-                 c11 = input(x1, y1)
-                 c12 = input(x1, y2)
-                 c21 = input(x2, y1)
-                 c22 = input(x2, y2)
-                 
-                 ! Bilinear interpolation
-                 f1 = (1.0-dx)*c11 + dx*c21
-                 f2 = (1.0-dx)*c12 + dx*c22
-                 output(i,j) = (1.0-dy)*f1 + dy*f2
-              end do
-           end do
+            implicit none
+            integer, intent(in) :: dims_in(2), dims_out(2)
+            real*4, intent(in) :: input(dims_in(1), dims_in(2))
+            real*4, intent(out) :: output(dims_out(1), dims_out(2))
+            
+            real :: x_scale, y_scale, x, y
+            integer :: i, j, x1, x2, y1, y2
+            real :: dx, dy
+            real :: c11, c12, c21, c22
+            real :: f1, f2
+            
+            ! Add debug prints to verify dimensions
+            write(LDT_logunit,*)'[DEBUG] zoom_2d input dims:', dims_in(1), dims_in(2)
+            write(LDT_logunit,*)'[DEBUG] zoom_2d output dims:', dims_out(1), dims_out(2)
+            
+            ! Compute scaling factors for first dimension (observations)
+            x_scale = real(dims_in(1) - 1) / real(dims_out(1) - 1)
+            
+            ! For second dimension (scans), use 1:1 mapping
+            y_scale = 1.0
+            
+            write(LDT_logunit,*)'[DEBUG] zoom_2d scaling factors:', x_scale, y_scale
+            
+            ! Iterate through output grid
+            do j = 1, dims_out(2)  ! Loop through scans (should be 1:1 mapping)
+                do i = 1, dims_out(1)  ! Loop through observations (needs downsampling)
+                    ! Calculate corresponding input coordinates
+                    x = 1.0 + (i-1) * x_scale  ! Observations (needs scaling)
+                    y = real(j)  ! Scans (1:1 mapping)
+                    
+                    ! Get surrounding points with bounds checking
+                    x1 = int(x)
+                    x1 = max(1, min(x1, dims_in(1)))
+                    
+                    x2 = x1 + 1
+                    x2 = min(x2, dims_in(1))
+                    
+                    y1 = int(y)
+                    y1 = max(1, min(y1, dims_in(2)))
+                    
+                    y2 = y1  ! Since we're doing 1:1 mapping in y dimension
+                    
+                    ! Get interpolation weights (only need x interpolation)
+                    dx = x - real(x1)
+                    
+                    ! Get corner values
+                    c11 = input(x1, y1)
+                    c21 = input(x2, y1)
+                    
+                    ! Linear interpolation (only in x direction)
+                    output(i,j) = (1.0-dx)*c11 + dx*c21
+                end do
+            end do
         end subroutine zoom_2d
         
 #else

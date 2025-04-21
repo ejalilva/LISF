@@ -124,8 +124,8 @@
                           IF (gcdist < search_radius) THEN !RESAMPLE ONLY WITHIN THE SEARCH RANGE
                              IF (gcdist < 0.0001D0) THEN !The TB is right on the grid center
                                 zerodistflag (rr,cc) = 1
-                                IF ((ABS (tim(jj) - (-9999.0)).GT.1.0D-7)) THEN !DO IF NOT FILLVALUE(-9999)
-                                   arfs_tim(rr,cc) = tim(jj) ; arfs_wt_tim(rr,cc) = 1.0
+                                IF ((ABS (tim(ii) - (-9999.0)).GT.1.0D-7)) THEN !DO IF NOT FILLVALUE(-9999)
+                                   arfs_tim(rr,cc) = tim(ii) ; arfs_wt_tim(rr,cc) = 1.0
                                 END IF
                                 IF ((ABS (tb_10h(jj,ii) - (-9999.0)).GT.1.0D-7)) THEN !DO IF NOT FILLVALUE(-9999)
                                    arfs_tb_10h(rr,cc) = tb_10h(jj,ii) ; arfs_wt_tb10h(rr,cc) = 1.0
@@ -172,8 +172,8 @@
                              ELSE ! 
                                 IF (zerodistflag (rr,cc).EQ.0) THEN
 
-                                   IF ((ABS (tim(jj) - (-9999.0)).GT.1.0D-7)) THEN !DO IF NOT FILLVALUE(-9999)
-                                      arfs_tim(rr,cc) = arfs_tim(rr,cc) + tim(jj) / SNGL (gcdist*gcdist)
+                                   IF ((ABS (tim(ii) - (-9999.0)).GT.1.0D-7)) THEN !DO IF NOT FILLVALUE(-9999)
+                                      arfs_tim(rr,cc) = arfs_tim(rr,cc) + tim(ii) / SNGL (gcdist*gcdist)
                                       arfs_wt_tim(rr,cc) = arfs_wt_tim(rr,cc) + 1.0 / SNGL (gcdist*gcdist)
                                    END IF
                                    IF ((ABS (tb_10v(jj,ii) - (-9999.0)).GT.1.0D-7)) THEN !DO IF NOT FILLVALUE(-9999)
@@ -352,10 +352,10 @@
                           IF (gcdist < search_radius) THEN !RESAMPLE ONLY WITHIN THE SEARCH RANGE
                              IF (gcdist < 0.0001D0) THEN !The TB is right on the grid center
                                 zerodistflag (rr,cc) = 1
-                                !IF ((ABS (tim(jj) - (-9999.0)).GT.1.0D-7)) THEN !DO IF NOT FILLVALUE(-9999)
-                                IF ( .not. tim(jj) < 0) THEN !DO IF NOT FILLVALUE(-9999)
+                                !IF ((ABS (tim(ii) - (-9999.0)).GT.1.0D-7)) THEN !DO IF NOT FILLVALUE(-9999)
+                                IF ( .not. tim(ii) < 0) THEN !DO IF NOT FILLVALUE(-9999)
 
-                                   arfs_tim(rr,cc) = tim(jj) ; arfs_wt_tim(rr,cc) = 1.0
+                                   arfs_tim(rr,cc) = tim(ii) ; arfs_wt_tim(rr,cc) = 1.0
                                 END IF
                                 !IF ((ABS (tbvl1b_cor(jj,ii) - (-9999.0)).GT.1.0D-7)) THEN !DO IF NOT FILLVALUE(-9999)
                                 IF ( .not. tbvl1b_cor(jj,ii) < 0 ) THEN !DO IF NOT FILLVALUE(-9999)
@@ -367,12 +367,12 @@
                              ELSE
                                 IF (zerodistflag (rr,cc).EQ.0) THEN
 
-                                   !IF ((ABS (tim(jj) - (-9999.0)).GT.1.0D-7)) THEN !DO IF NOT FILLVALUE(-9999)
-                                   IF ( .not. tim(jj) < 0 ) THEN !DO IF NOT FILLVALUE(-9999)
+                                   !IF ((ABS (tim(ii) - (-9999.0)).GT.1.0D-7)) THEN !DO IF NOT FILLVALUE(-9999)
+                                   IF ( .not. tim(ii) < 0 ) THEN !DO IF NOT FILLVALUE(-9999)
 
-                                      !arfs_tim(rr,cc) = arfs_tim(rr,cc) + tim(jj) / SNGL (gcdist*gcdist)
+                                      !arfs_tim(rr,cc) = arfs_tim(rr,cc) + tim(ii) / SNGL (gcdist*gcdist)
                                       !arfs_wt_tim(rr,cc) = arfs_wt_tim(rr,cc) + 1.0 / SNGL (gcdist*gcdist)
-                                      arfs_tim(rr,cc) = arfs_tim(rr,cc) + tim(jj) / (gcdist*gcdist)
+                                      arfs_tim(rr,cc) = arfs_tim(rr,cc) + tim(ii) / (gcdist*gcdist)
                                       arfs_wt_tim(rr,cc) = arfs_wt_tim(rr,cc) + 1.0 /  (gcdist*gcdist)
 
                                    END IF
