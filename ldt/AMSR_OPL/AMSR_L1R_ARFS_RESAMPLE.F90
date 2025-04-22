@@ -64,11 +64,15 @@ subroutine AMSR_L1R_RESAMPLE(AMSRFILE,L1R_dir,Orbit,ARFS_TIME,rc)
   REAL :: T1, T2
 
   rc = 0
-
+  ! Extra logging for debug
+  write(LDT_logunit,*) '[INFO] Starting AMSR_L1R_RESAMPLE for file:', trim(AMSRFILE)
+  
   CALL ARFS_GEO
   ALLOCATE(ARFS_LAT(arfs_nrow_lat),ARFS_LON(arfs_mcol_lon)) 
   ARFS_LAT = LAT(arfs_geo_lat_lo,arfs_geo_lat_up,-arfs_lat_space)
   ARFS_LON = LON(arfs_geo_lon_lf,arfs_geo_lon_rt,arfs_lon_space)
+
+  write(LDT_logunit,*) '[INFO] Calling get_amsr_l1r to read:', trim(AMSRFILE)
 
   CALL get_amsr_l1r (AMSRFILE,TIME_L1R, &
           TB_10V, TB_10H, TB_18V, TB_18H, &
@@ -79,6 +83,28 @@ subroutine AMSR_L1R_RESAMPLE(AMSRFILE,L1R_dir,Orbit,ARFS_TIME,rc)
           RFI_FLAG, &
           nrow, mcol, nrow89,ncol89, ierr)
   ! TODO check all of these and find where they are called, nrow89,ncol89 perhaps in the invdist script the input to invdist should be modified
+  
+  ! Extra validation before proceeding
+  write(LDT_logunit,*) '[DEBUG] After get_amsr_l1r - dimensions:'
+  write(LDT_logunit,*) '   nrow=', nrow, ', mcol=', mcol
+  
+  ! Check array dimensions before calling L1RTB2ARFS_INVDIS
+  if (nrow <= 0 .or. mcol <= 0) then
+    write(LDT_logunit,*) '[ERR] Invalid array dimensions: nrow=', nrow, ', mcol=', mcol
+    rc = 1
+    return
+  endif
+  
+  ! Verify lat/lon array sizes match brightness temperature array sizes
+  if (size(LAT_L1R,1) /= size(TB_10H,1) .or. size(LAT_L1R,2) /= size(TB_10H,2) .or. &
+      size(LON_L1R,1) /= size(TB_10H,1) .or. size(LON_L1R,2) /= size(TB_10H,2)) then
+    write(LDT_logunit,*) '[ERR] Dimension mismatch between lat/lon and brightness temperature arrays'
+    write(LDT_logunit,*) '      LAT_L1R: ', size(LAT_L1R,1), 'x', size(LAT_L1R,2)
+    write(LDT_logunit,*) '      TB_10H: ', size(TB_10H,1), 'x', size(TB_10H,2)
+    rc = 1
+    return
+  endif
+  
   if (ierr == 1) then
      if (nrow == 0 .and. mcol == 0) then
         write(LDT_logunit,*)'[ERR] Problem reading ', trim(AMSRFILE)
@@ -91,22 +117,6 @@ subroutine AMSR_L1R_RESAMPLE(AMSRFILE,L1R_dir,Orbit,ARFS_TIME,rc)
      end if
   end if
   
-  ! Check array dimensions before calling L1RTB2ARFS_INVDIS
-    if (nrow <= 0 .or. mcol <= 0) then
-        write(LDT_logunit,*) '[ERR] Invalid array dimensions: nrow=', nrow, ', mcol=', mcol
-        rc = 1
-        return
-    endif
-    
-    ! Verify lat/lon array sizes match brightness temperature array sizes
-    if (size(LAT_L1R,1) /= size(TB_10H,1) .or. size(LAT_L1R,2) /= size(TB_10H,2) .or. &
-        size(LON_L1R,1) /= size(TB_10H,1) .or. size(LON_L1R,2) /= size(TB_10H,2)) then
-        write(LDT_logunit,*) '[ERR] Dimension mismatch between lat/lon and brightness temperature arrays'
-        write(LDT_logunit,*) '      LAT_L1R: ', size(LAT_L1R,1), 'x', size(LAT_L1R,2)
-        write(LDT_logunit,*) '      TB_10H: ', size(TB_10H,1), 'x', size(TB_10H,2)
-        rc = 1
-        return
-    endif
     
   CALL L1RTB2ARFS_INVDIS(TIME_L1R, TB_10H, TB_10V, TB_18H, TB_18V, TB_23H, TB_23V, &
           TB_36H, TB_36V, TB_89H, TB_89V, LAND_WATER_FRAC, &
@@ -141,6 +151,9 @@ subroutine AMSR_L1R_RESAMPLE(AMSRFILE,L1R_dir,Orbit,ARFS_TIME,rc)
     variable_name(10) = 'ARFS_TB_89H'
     variable_name(11) = 'ARFS_TB_89V'
     variable_name(12) = 'ARFS_LAND_WATER_FRAC'
+    variable_name(13) = 'ARFS_LAT'
+    variable_name(14) = 'ARFS_LON'
+    
     
     L1R_dir_len = len_trim(L1R_dir)
     L1R_fname_len = len_trim(AMSRFILE)
@@ -167,7 +180,7 @@ subroutine AMSR_L1R_RESAMPLE(AMSRFILE,L1R_dir,Orbit,ARFS_TIME,rc)
           enddo
        endif
 
-       OPEN(UNIT=151, FILE=resample_filename(1),FORM='UNFORMATTED',ACCESS='DIRECT', RECL=arfs_nrow_lat*arfs_mcol_lon*4)
+       OPEN(UNIT=151, FILE=resample_filename(1),FORM='UNFORMATTED',ACCESS='DIRECT', RECL=arfs_nrow_lat*arfs_mcol_lon*8)
        WRITE(UNIT=151, REC = 1) ARFS_TIME
        CLOSE(151)
        OPEN(UNIT=151, FILE=resample_filename(2),FORM='UNFORMATTED',ACCESS='DIRECT', RECL=arfs_nrow_lat*arfs_mcol_lon*4)
@@ -203,7 +216,13 @@ subroutine AMSR_L1R_RESAMPLE(AMSRFILE,L1R_dir,Orbit,ARFS_TIME,rc)
        OPEN(UNIT=151, FILE=resample_filename(12),FORM='UNFORMATTED',ACCESS='DIRECT', RECL=arfs_nrow_lat*arfs_mcol_lon*4)
        WRITE(UNIT=151, REC = 1) ARFS_LAND_WATER_FRAC
        CLOSE(151)
-    endif
+       OPEN(UNIT=151, FILE=resample_filename(13),FORM='UNFORMATTED',ACCESS='DIRECT', RECL=arfs_nrow_lat*arfs_mcol_lon*4)
+       WRITE(UNIT=151, REC = 1) ARFS_LAND_WATER_FRAC
+       CLOSE(151)
+       OPEN(UNIT=151, FILE=resample_filename(12),FORM='UNFORMATTED',ACCESS='DIRECT', RECL=arfs_nrow_lat*arfs_mcol_lon*4)
+       WRITE(UNIT=151, REC = 1) ARFS_LAND_WATER_FRAC
+       CLOSE(151)
+       endif
 
     ! end of TODO for writting the outputfile
     !=================================================

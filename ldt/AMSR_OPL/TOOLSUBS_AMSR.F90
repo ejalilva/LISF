@@ -268,12 +268,12 @@ MODULE TOOLSUBS_AMSR
           end if
           
           ! Read pixel quality flags
-          call get_dataset_pixel_quality(file_id, "Pixel Data Quality 6 to 36", &
-               n, m, pixel_qual_flag, ierr)
-          if (ierr /= 0) then
-             write(LDT_logunit,*)'[WARN] Failed to read pixel quality flags'
+          !call get_dataset_pixel_quality(file_id, "Pixel Data Quality 6 to 36", &
+               !n, m, pixel_qual_flag, ierr)
+          !if (ierr /= 0) then
+             !write(LDT_logunit,*)'[WARN] Failed to read pixel quality flags'
              ! Continue anyway
-          end if
+          !end if
           
           ! ===============================================
           ! STEP 6: Generate interpolated lat/lon grid for res10 data
