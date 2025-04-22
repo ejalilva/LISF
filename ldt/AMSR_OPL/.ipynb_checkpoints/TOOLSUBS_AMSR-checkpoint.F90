@@ -40,7 +40,7 @@ MODULE TOOLSUBS_AMSR
       ! Arguments
       character(*), intent(in) :: filename
       real*8, allocatable, intent(out) :: tb_time_seconds(:)
-      real, allocatable, intent(out) :: tb_10v(:,:), tb_10h(:,:), tb_18v(:,:), tb_18h(:,:), tb_23v(:,:), tb_23h(:,:), tb_36v(:,:), &
+      real*4, allocatable, intent(out) :: tb_10v(:,:), tb_10h(:,:), tb_18v(:,:), tb_18h(:,:), tb_23v(:,:), tb_23h(:,:), tb_36v(:,:), &
       tb_36h(:,:), tb_89v(:,:), tb_89h(:,:)
       integer*4, allocatable, intent(out) :: land_water_frac(:,:)
       real*4, allocatable, intent(out) :: lat89(:,:), lon89(:,:)
@@ -110,8 +110,162 @@ MODULE TOOLSUBS_AMSR
          ierr = 1
          return
       end if
+      
+      ! Get dimensions for res10 data - use 10.7GHz horizontal polarization as reference
+      write(LDT_logunit,*)'[INFO] Getting dimensions for brightness temperature arrays'
+      dataset = "Brightness Temperature (res10,10.7GHz,H)"
+      call h5dopen_f(file_id, trim(dataset), dataset_id, hdferr)
+      if (hdferr /= 0) then
+          write(LDT_logunit,*)'[ERR] Cannot open dataset: ', trim(dataset)
+          call h5fclose_f(file_id, hdferr)
+          call h5close_f(hdferr)
+          ierr = 1
+          return
+      endif
+      
+      call h5dget_space_f(dataset_id, dataspace_id, hdferr)
+      if (hdferr /= 0) then
+          write(LDT_logunit,*)'[ERR] Cannot get dataspace for: ', trim(dataset)
+          call h5dclose_f(dataset_id, hdferr)
+          call h5fclose_f(file_id, hdferr)
+          call h5close_f(hdferr)
+          ierr = 1
+          return
+      endif
+      
+      call h5sget_simple_extent_dims_f(dataspace_id, dims, maxdims, hdferr)
+      if (hdferr < 0) then
+          write(LDT_logunit,*)'[ERR] Cannot get dimensions for: ', trim(dataset)
+          call h5sclose_f(dataspace_id, hdferr)
+          call h5dclose_f(dataset_id, hdferr)
+          call h5fclose_f(file_id, hdferr)
+          call h5close_f(hdferr)
+          ierr = 1
+          return
+      endif
+      
+      call h5sclose_f(dataspace_id, hdferr)
+      call h5dclose_f(dataset_id, hdferr)
+      
+      n = int(dims(1))
+      m = int(dims(2))
+      write(LDT_logunit,*)'[INFO] Brightness temperature dimensions:', n, 'x', m
+      
+      ! Get dimensions for 89A data
+      dataset = "Latitude of Observation Point for 89A"
+      call h5dopen_f(file_id, trim(dataset), dataset_id, hdferr)
+      if (hdferr /= 0) then
+          write(LDT_logunit,*)'[ERR] Cannot open dataset: ', trim(dataset)
+          call h5fclose_f(file_id, hdferr)
+          call h5close_f(hdferr)
+          ierr = 1
+          return
+      endif
+      
+      call h5dget_space_f(dataset_id, dataspace_id, hdferr)
+      call h5sget_simple_extent_dims_f(dataspace_id, dims, maxdims, hdferr)
+      call h5sclose_f(dataspace_id, hdferr)
+      call h5dclose_f(dataset_id, hdferr)
+      
+      n89 = int(dims(1))
+      m89 = int(dims(2))
+      write(LDT_logunit,*)'[INFO] 89GHz lat/lon dimensions:', n89, 'x', m89
+      
+      ! Allocate all arrays with the dimensions we just detected
+      if (.not. allocated(tb_time_seconds)) allocate(tb_time_seconds(m))
+      
+      if (.not. allocated(lat89)) allocate(lat89(n89, m89))
+      if (.not. allocated(lon89)) allocate(lon89(n89, m89))
+      
+      if (.not. allocated(lat)) allocate(lat(n, m))
+      if (.not. allocated(lon)) allocate(lon(n, m))
+      
+      if (.not. allocated(tb_10v)) allocate(tb_10v(n, m))
+      if (.not. allocated(tb_10h)) allocate(tb_10h(n, m))
+      if (.not. allocated(tb_18v)) allocate(tb_18v(n, m))
+      if (.not. allocated(tb_18h)) allocate(tb_18h(n, m))
+      if (.not. allocated(tb_23v)) allocate(tb_23v(n, m))
+      if (.not. allocated(tb_23h)) allocate(tb_23h(n, m))
+      if (.not. allocated(tb_36v)) allocate(tb_36v(n, m))
+      if (.not. allocated(tb_36h)) allocate(tb_36h(n, m))
+      if (.not. allocated(tb_89v)) allocate(tb_89v(n, m))
+      if (.not. allocated(tb_89h)) allocate(tb_89h(n, m))
+      
+      if (.not. allocated(snow)) allocate(snow(n, m))
+      if (.not. allocated(precip)) allocate(precip(n, m))
+      if (.not. allocated(land_water_frac)) allocate(land_water_frac(n, m))
+      if (.not. allocated(pixel_qual_flag)) allocate(pixel_qual_flag(n, m))
+      
+      ! Initialize all arrays
+      tb_time_seconds = 0.0
+      lat89 = 0.0
+      lon89 = 0.0
+      lat = 0.0
+      lon = 0.0
+      tb_10v = 0.0
+      tb_10h = 0.0
+      tb_18v = 0.0
+      tb_18h = 0.0
+      tb_23v = 0.0
+      tb_23h = 0.0
+      tb_36v = 0.0
+      tb_36h = 0.0
+      tb_89v = 0.0
+      tb_89h = 0.0
+      snow = 0
+      precip = 0
+      land_water_frac = 0
+      pixel_qual_flag = 0
 
       ! Get the data
+      dataset = "Latitude of Observation Point for 89A"
+      call get_dataset_real4_2d(file_id, dataset, n89, m89,lat89, ierr)
+      if (ierr == 1) then
+         call h5fclose_f(file_id, hdferr)
+         call h5close_f(hdferr)
+         call freeall(ierr)
+         return
+      end if
+
+      dataset = "Longitude of Observation Point for 89A"
+      call get_dataset_real4_2d(file_id, dataset, n89, m89,lon89, ierr)
+      if (ierr == 1) then
+         call h5fclose_f(file_id, hdferr)
+         call h5close_f(hdferr)
+         call freeall(ierr)
+         return
+      end if     
+      
+      ! Resample lat/lon using zoom
+      if (.not. allocated(lat)) then
+          allocate(lat(n, m), stat=hdferr)
+          if (hdferr /= 0) then
+              write(LDT_logunit,*)'[ERR] Failed to allocate memory for lat array'
+              ierr = 1
+              return
+          endif
+          lat = 0.0
+      endif
+    
+      if (.not. allocated(lon)) then
+          allocate(lon(n, m), stat=hdferr)
+          if (hdferr /= 0) then
+              write(LDT_logunit,*)'[ERR] Failed to allocate memory for lon array'
+              ierr = 1
+              return
+          endif
+          lon = 0.0
+      endif
+      
+      write(LDT_logunit,*)'[DEBUG] lat89 dimensions(n89, m89):', n89, m89
+      write(LDT_logunit,*)'[DEBUG] lat dimensions (n, m):', n, m
+
+      write(LDT_logunit,*)'[DEBUG] lat89 dimensions:', size(lat89,1), size(lat89,2)
+      write(LDT_logunit,*)'[DEBUG] lat dimensions:', size(lat,1), size(lat,2)
+        
+     ! Pass dimensions in the correct order
+      call zoom_2d(lat89, (/size(lat89,1), size(lat89,2)/), lat, (/size(lat,1), size(lat,2)/))
+      call zoom_2d(lon89, (/size(lon89,1), size(lon89,2)/), lon, (/size(lon,1), size(lon,2)/))
 
       dataset = "Scan Time"
       call get_dataset_real8_1d(file_id, dataset, n, tb_time_seconds,ierr)
@@ -199,56 +353,7 @@ MODULE TOOLSUBS_AMSR
          call h5close_f(hdferr)
          call freeall(ierr)
          return
-      end if
-
-      dataset = "Latitude of Observation Point for 89A"
-      call get_dataset_real4_2d(file_id, dataset, n89, m89,lat89, ierr)
-      if (ierr == 1) then
-         call h5fclose_f(file_id, hdferr)
-         call h5close_f(hdferr)
-         call freeall(ierr)
-         return
-      end if
-
-      dataset = "Longitude of Observation Point for 89A"
-      call get_dataset_real4_2d(file_id, dataset, n89, m89,lon89, ierr)
-      if (ierr == 1) then
-         call h5fclose_f(file_id, hdferr)
-         call h5close_f(hdferr)
-         call freeall(ierr)
-         return
-      end if     
-      
-      ! Resample lat/lon using zoom
-        if (.not. allocated(lat)) then
-            allocate(lat(n, m), stat=hdferr)
-            if (hdferr /= 0) then
-                write(LDT_logunit,*)'[ERR] Failed to allocate memory for lat array'
-                ierr = 1
-                return
-            endif
-            lat = 0.0
-        endif
-        
-        if (.not. allocated(lon)) then
-            allocate(lon(n, m), stat=hdferr)
-            if (hdferr /= 0) then
-                write(LDT_logunit,*)'[ERR] Failed to allocate memory for lon array'
-                ierr = 1
-                return
-            endif
-            lon = 0.0
-        endif
-      write(LDT_logunit,*)'[DEBUG] lat89 dimensions(n89, m89):', n89, m89
-      write(LDT_logunit,*)'[DEBUG] lat dimensions (n, m):', n, m
-
-        write(LDT_logunit,*)'[DEBUG] lat89 dimensions:', size(lat89,1), size(lat89,2)
-        write(LDT_logunit,*)'[DEBUG] lat dimensions:', size(lat,1), size(lat,2)
-        
-        ! Pass dimensions in the correct order
-        call zoom_2d(lat89, (/size(lat89,1), size(lat89,2)/), lat, (/size(lat,1), size(lat,2)/))
-        call zoom_2d(lon89, (/size(lon89,1), size(lon89,2)/), lon, (/size(lon,1), size(lon,2)/))
-     
+      end if   
       ! Reading quality flag data
       !dataset = "Scan Data Quality"
       !call get_dataset_integer2_2d(file_id, dataset, n, m, &
@@ -751,7 +856,7 @@ MODULE TOOLSUBS_AMSR
         ! Check the datatype class
         call h5tget_class_f(datatype_id, class, hdferr)
         if (hdferr == -1) then
-           write(LDT_logunit,*)'[ERR] Cannot get class for ', &
+           write(LDT_logunit,*)'[WARN] Cannot get class for ', &
                 trim(dataset)
            call h5tclose_f(datatype_id, hdferr)
            call h5dclose_f(dataset_id, hdferr)
@@ -761,9 +866,9 @@ MODULE TOOLSUBS_AMSR
            return
         end if
         if (class .ne. H5T_FLOAT_F) then
-           write(LDT_logunit,*)'[ERR] Bad class for ', &
+           write(LDT_logunit,*)'[WARN] Bad class for ', &
                 trim(dataset)
-           write(LDT_logunit,*)'[ERR] Expected ', H5T_FLOAT_F, &
+           write(LDT_logunit,*)'[WARN] Expected ', H5T_FLOAT_F, &
                 ', found ', class
            !call h5tclose_f(datatype_id, hdferr)
            !call h5dclose_f(dataset_id, hdferr)
@@ -776,7 +881,7 @@ MODULE TOOLSUBS_AMSR
         ! Check the size of the datatype
         call h5tget_size_f(datatype_id, size, hdferr)
         if (hdferr == -1) then
-           write(LDT_logunit,*)'[ERR] Cannot get size for ', &
+           write(LDT_logunit,*)'[WARN] Cannot get size for ', &
                 trim(dataset)
            call h5tclose_f(datatype_id, hdferr)
            call h5dclose_f(dataset_id, hdferr)
@@ -786,9 +891,9 @@ MODULE TOOLSUBS_AMSR
            return
         end if
         if (size .ne. 4) then
-           write(LDT_logunit,*)'[ERR] Wrong byte size found for ', &
+           write(LDT_logunit,*)'[WARN] Wrong byte size found for ', &
                 trim(dataset)
-           write(LDT_logunit,*)'[ERR] Expected 4, found ', size
+           write(LDT_logunit,*)'[WARN] Expected 4, found ', size
            !call h5tclose_f(datatype_id, hdferr)
            !call h5dclose_f(dataset_id, hdferr)
            !call h5fclose_f(file_id, hdferr)
@@ -1363,7 +1468,9 @@ MODULE TOOLSUBS_AMSR
           if (allocated(tb_time_seconds)) deallocate(tb_time_seconds)
           !if (allocated(scan_qual_flag)) deallocate(scan_qual_flag)
           if (allocated(pixel_qual_flag)) deallocate(pixel_qual_flag)
-          !if (allocated(land_ocean_flag)) deallocate(land_ocean_flag)
+          if (allocated(land_water_frac)) deallocate(land_water_frac)
+          if (allocated(snow)) deallocate(snow)
+          if (allocated(precip)) deallocate(precip)
           m = 0
           n = 0
           ierr = 1
@@ -1379,48 +1486,43 @@ MODULE TOOLSUBS_AMSR
             real :: x_scale, y_scale, x, y
             integer :: i, j, x1, x2, y1, y2
             real :: dx, dy
-            real :: c11, c12, c21, c22
-            real :: f1, f2
+            real :: c11, c21
             
-            ! Add debug prints to verify dimensions
+            ! Add more debug info
             write(LDT_logunit,*)'[DEBUG] zoom_2d input dims:', dims_in(1), dims_in(2)
             write(LDT_logunit,*)'[DEBUG] zoom_2d output dims:', dims_out(1), dims_out(2)
             
-            ! Compute scaling factors for first dimension (observations)
+            ! Verify dimensions are valid
+            if (dims_in(1) <= 1 .or. dims_in(2) <= 1 .or. dims_out(1) <= 1 .or. dims_out(2) <= 1) then
+                write(LDT_logunit,*)'[ERR] Invalid dimensions for zoom_2d'
+                output = 0.0  ! Initialize with zeros to prevent undefined values
+                return
+            endif
+            
+            ! Compute scaling factors
             x_scale = real(dims_in(1) - 1) / real(dims_out(1) - 1)
+            y_scale = 1.0  ! Use 1:1 mapping for second dimension
             
-            ! For second dimension (scans), use 1:1 mapping
-            y_scale = 1.0
-            
-            write(LDT_logunit,*)'[DEBUG] zoom_2d scaling factors:', x_scale, y_scale
-            
-            ! Iterate through output grid
-            do j = 1, dims_out(2)  ! Loop through scans (should be 1:1 mapping)
-                do i = 1, dims_out(1)  ! Loop through observations (needs downsampling)
+            ! Iterate through output grid with bounds checking
+            do j = 1, dims_out(2)
+                do i = 1, dims_out(1)
                     ! Calculate corresponding input coordinates
-                    x = 1.0 + (i-1) * x_scale  ! Observations (needs scaling)
-                    y = real(j)  ! Scans (1:1 mapping)
+                    x = 1.0 + (i-1) * x_scale
+                    y = real(j)
                     
-                    ! Get surrounding points with bounds checking
-                    x1 = int(x)
-                    x1 = max(1, min(x1, dims_in(1)))
+                    ! Get surrounding points with more careful bounds checking
+                    x1 = max(1, min(int(x), dims_in(1)))
+                    x2 = min(x1 + 1, dims_in(1))
+                    y1 = max(1, min(int(y), dims_in(2)))
                     
-                    x2 = x1 + 1
-                    x2 = min(x2, dims_in(1))
+                    ! Get interpolation weights
+                    dx = max(0.0, min(1.0, x - real(x1)))  ! Clamp between 0 and 1
                     
-                    y1 = int(y)
-                    y1 = max(1, min(y1, dims_in(2)))
-                    
-                    y2 = y1  ! Since we're doing 1:1 mapping in y dimension
-                    
-                    ! Get interpolation weights (only need x interpolation)
-                    dx = x - real(x1)
-                    
-                    ! Get corner values
+                    ! Get corner values safely
                     c11 = input(x1, y1)
                     c21 = input(x2, y1)
                     
-                    ! Linear interpolation (only in x direction)
+                    ! Linear interpolation
                     output(i,j) = (1.0-dx)*c11 + dx*c21
                 end do
             end do

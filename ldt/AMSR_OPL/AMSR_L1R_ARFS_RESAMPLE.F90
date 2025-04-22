@@ -90,7 +90,24 @@ subroutine AMSR_L1R_RESAMPLE(AMSRFILE,L1R_dir,Orbit,ARFS_TIME,rc)
         call LDT_endrun()
      end if
   end if
-
+  
+  ! Check array dimensions before calling L1RTB2ARFS_INVDIS
+    if (nrow <= 0 .or. mcol <= 0) then
+        write(LDT_logunit,*) '[ERR] Invalid array dimensions: nrow=', nrow, ', mcol=', mcol
+        rc = 1
+        return
+    endif
+    
+    ! Verify lat/lon array sizes match brightness temperature array sizes
+    if (size(LAT_L1R,1) /= size(TB_10H,1) .or. size(LAT_L1R,2) /= size(TB_10H,2) .or. &
+        size(LON_L1R,1) /= size(TB_10H,1) .or. size(LON_L1R,2) /= size(TB_10H,2)) then
+        write(LDT_logunit,*) '[ERR] Dimension mismatch between lat/lon and brightness temperature arrays'
+        write(LDT_logunit,*) '      LAT_L1R: ', size(LAT_L1R,1), 'x', size(LAT_L1R,2)
+        write(LDT_logunit,*) '      TB_10H: ', size(TB_10H,1), 'x', size(TB_10H,2)
+        rc = 1
+        return
+    endif
+    
   CALL L1RTB2ARFS_INVDIS(TIME_L1R, TB_10H, TB_10V, TB_18H, TB_18V, TB_23H, TB_23V, &
           TB_36H, TB_36V, TB_89H, TB_89V, LAND_WATER_FRAC, &
           SNOW, PRECIP, &

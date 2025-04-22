@@ -22,7 +22,6 @@
 
  MODULE invdist_l1r2arfs
    IMPLICIT NONE
-
  CONTAINS
    SUBROUTINE L1RTB2ARFS_INVDIS(tim, tb_10h, tb_10v, tb_18h, tb_18v, tb_23h, tb_23v, &
           tb_36h, tb_36v, tb_89h, tb_89v, land_water_frac, &
@@ -39,6 +38,7 @@
         !ref_lat, ref_lon, arfs_tim, arfs_tbv_cor, arfs_tbh_cor, arfs_tbv, arfs_tbh, arfs_nedtv, arfs_nedth, &
         !arfs_surwatv, arfs_surwath, arfs_wt_cor_tbv, arfs_wt_cor_tbh, arfs_samplenumv, arfs_samplenumh)
 
+     USE LDT_logMod, only: LDT_logunit ! Add this import for logging
 
      INTEGER(4) :: ii, jj, k, r, c, rr, rmin, rmax, cc, cmin, cmax, nrows_l1rtb, ncols_l1rtb
      INTEGER(4), PARAMETER :: qualitybit = 0
@@ -96,16 +96,36 @@
      arfs_wt_land_water_frac=0.0
      !arfs_wt_rfi_flag=0.0 ! uncomment for RFI flag
 
+    ! Boundary check and debugging prints
+    write(LDT_logunit,*) '[DEBUG] array dimensions:'
+    write(LDT_logunit,*) '   nrows_l1rtb, ncols_l1rtb = ', nrows_l1rtb, ncols_l1rtb
+    write(LDT_logunit,*) '   size(ref_lat), size(ref_lon) = ', size(ref_lat), size(ref_lon)
+
+
      DO ii = 1,ncols_l1rtb
            DO jj = 1,nrows_l1rtb
+                 ! Skip invalid coordinates
+                 if (lat_l1r(jj,ii) < -90.0 .or. lat_l1r(jj,ii) > 90.0 .or. &
+                     lon_l1r(jj,ii) < -180.0 .or. lon_l1r(jj,ii) > 180.0) then
+                     cycle
+                 endif
                  ! FIND ARFS_GRID (r,c)
                  c = MINLOC(ABS(lat_l1r(jj,ii)-ref_lat(:)),1) !Lat Direction
                  r = MINLOC(ABS(lon_l1r(jj,ii)-ref_lon(:)),1) !Lon Direction
+                 
+                 ! Ensure r and c are valid indices
+                 if (r < 1 .or. r > size(ref_lon) .or. c < 1 .or. c > size(ref_lat)) then
+                     cycle  ! Skip this point
+                 endif
+                 
                  rmin=r-5 ; IF (rmin < 1) rmin=1
                  rmax=r+5 ; IF (rmax > size(ref_lon)) rmax=size(ref_lon)
                  cmin=c-5 ; IF (cmin < 1) cmin=1
                  cmax=c+5 ; IF (cmax > size(ref_lat)) cmax=size(ref_lat)
                  ! start from here
+                 ! Check snow and precip flags - with bounds protection
+                IF (jj <= size(snow_flag,1) .and. ii <= size(snow_flag,2) .and. &
+                    jj <= size(precip_flag,1) .and. ii <= size(precip_flag,2)) THEN
                  IF (IBITS (snow_flag(jj,ii),qualitybit,1) == 0 .AND. IBITS (precip_flag(jj,ii),qualitybit,1) == 0) THEN !USE Snow and Precip flag to filter the footprints
                     k=0
                     DO rr = rmin,rmax !Lon direction
@@ -233,6 +253,7 @@
                           END IF !(gcdist < search_radius)
                        END DO !cc =cmin,cmax
                     END DO !rr = rmin,rmax
+                    END IF
                  END IF !(IBITS (snow_flag(jj,ii),qualitybit,1) == 0 .AND. IBITS (precip_flag(jj,jj),qualitybit,1) == 0)
            END DO !jj=1,2
      END DO !ii=1,2
@@ -240,7 +261,7 @@
      ! TODO add a seperate for loop for the rfi_flag to loop trough lat89 and lon89 already defined in the variable defenition section but commented
 
      !APPLY WEIGHTING FUNCTION FOR RESAMPLING
-     WHERE(arfs_tim.NE.0.0.AND.arfs_wt_tim.NE.0.0)
+     WHERE(arfs_tim.NE.0.0 .AND. arfs_wt_tim.NE.0.0)
         arfs_tim = arfs_tim / arfs_wt_tim
      END WHERE
      WHERE(arfs_tb_10h.NE.0.0 .AND.arfs_wt_tb10h.NE.0.0)
@@ -279,6 +300,8 @@
      !WHERE(arfs_rfi_flag.NE.0.0 .AND.arfs_wt_rfi_flag.NE.0.0)
         !arfs_rfi_flag = arfs_rfi_flag / arfs_wt_rfi_flag
      !END WHERE
+     ! Clean up allocated memory
+     IF (allocated(zerodistflag)) DEALLOCATE(zerodistflag)
    END SUBROUTINE L1RTB2ARFS_INVDIS
 
    ! EMK...Only process subset of SMAP L1B fields for NRT operations.
