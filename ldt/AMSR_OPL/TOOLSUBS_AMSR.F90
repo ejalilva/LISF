@@ -387,127 +387,157 @@ MODULE TOOLSUBS_AMSR
             end do
           end subroutine zoom_2d
 
-          ! Function for reading 2D brightness temperature fields (uint16 with scale factor 0.01)
-            subroutine get_dataset_tb_2d(file_id, dataset, n, m, var2d, ierr)
-              use LDT_logMod, only: LDT_logunit
-              implicit none
-            
-              ! Arguments
-              integer(HID_T), intent(in) :: file_id
-              character(*), intent(in) :: dataset
-              integer, intent(out) :: n
-              integer, intent(out) :: m
-              real*4, allocatable, intent(out) :: var2d(:,:)
-              integer, intent(out) :: ierr
-            
-              ! Locals
-              integer(HID_T) :: dataset_id, dataspace_id
-              logical :: link_exists
-              integer :: hdferr
-              integer(HSIZE_T) :: dims(2), maxdims(2)
-              integer :: rank
-              integer*2, allocatable :: raw_data(:,:)  ! Use int*2 for uint16
-              integer :: i, j
-              real :: scale_factor = 0.01  ! Known scale factor for brightness temperature
-            
-              ierr = 0
-            
-              ! Check if dataset exists
-              call h5lexists_f(file_id, trim(dataset), link_exists, hdferr)
-              if (hdferr /= 0 .or. .not. link_exists) then
-                write(LDT_logunit,*)'[ERR] Dataset not found: ', trim(dataset)
-                ierr = 1
-                return
-              endif
-            
-              ! Open the dataset
-              call h5dopen_f(file_id, trim(dataset), dataset_id, hdferr)
-              if (hdferr /= 0) then
-                write(LDT_logunit,*)'[ERR] Cannot open dataset: ', trim(dataset)
-                ierr = 1
-                return
-              endif
-            
-              ! Get the dataspace and dimensions
-              call h5dget_space_f(dataset_id, dataspace_id, hdferr)
-              if (hdferr /= 0) then
-                write(LDT_logunit,*)'[ERR] Cannot get dataspace for: ', trim(dataset)
-                call h5dclose_f(dataset_id, hdferr)
-                ierr = 1
-                return
-              endif
-            
-              call h5sget_simple_extent_ndims_f(dataspace_id, rank, hdferr)
-              if (hdferr /= 0 .or. rank /= 2) then
-                write(LDT_logunit,*)'[ERR] Expected 2D dataset, found rank: ', rank
-                call h5sclose_f(dataspace_id, hdferr)
-                call h5dclose_f(dataset_id, hdferr)
-                ierr = 1
-                return
-              endif
-            
-              call h5sget_simple_extent_dims_f(dataspace_id, dims, maxdims, hdferr)
-              if (hdferr < 0) then
-                write(LDT_logunit,*)'[ERR] Cannot get dimensions for: ', trim(dataset)
-                call h5sclose_f(dataspace_id, hdferr)
-                call h5dclose_f(dataset_id, hdferr)
-                ierr = 1
-                return
-              endif
-            
-              n = int(dims(1))
-              m = int(dims(2))
-              
-              ! Allocate arrays for raw data and result
-              allocate(raw_data(n, m), stat=hdferr)
-              if (hdferr /= 0) then
-                write(LDT_logunit,*)'[ERR] Memory allocation failed for raw data'
-                call h5sclose_f(dataspace_id, hdferr)
-                call h5dclose_f(dataset_id, hdferr)
-                ierr = 1
-                return
-              endif
-              
-              allocate(var2d(n, m), stat=hdferr)
-              if (hdferr /= 0) then
-                write(LDT_logunit,*)'[ERR] Memory allocation failed for output array'
-                deallocate(raw_data)
-                call h5sclose_f(dataspace_id, hdferr)
-                call h5dclose_f(dataset_id, hdferr)
-                ierr = 1
-                return
-              endif
-              
-              ! Read the raw uint16 data
-              call h5dread_f(dataset_id, H5T_NATIVE_INTEGER, raw_data, dims, hdferr)
-              if (hdferr /= 0) then
-                write(LDT_logunit,*)'[ERR] Cannot read data for: ', trim(dataset)
-                deallocate(raw_data)
-                deallocate(var2d)
-                call h5sclose_f(dataspace_id, hdferr)
-                call h5dclose_f(dataset_id, hdferr)
-                ierr = 1
-                return
-              endif
-              
-              ! Apply scale factor and convert to float
-              do j = 1, m
-                do i = 1, n
-                  if (raw_data(i,j) > 0) then
-                    var2d(i,j) = real(raw_data(i,j)) * scale_factor
-                  else
-                    var2d(i,j) = -9999.0  ! Fill value for invalid data
-                  endif
-                enddo
-              enddo
-              
-              ! Clean up
-              deallocate(raw_data)
+        ! Function for reading 2D brightness temperature fields (uint16 with scale factor 0.01)
+        subroutine get_dataset_tb_2d(file_id, dataset, n, m, var2d, ierr)
+          use LDT_logMod, only: LDT_logunit
+          implicit none
+        
+          ! Arguments
+          integer(HID_T), intent(in) :: file_id
+          character(*), intent(in) :: dataset
+          integer, intent(out) :: n
+          integer, intent(out) :: m
+          real*4, allocatable, intent(out) :: var2d(:,:)
+          integer, intent(out) :: ierr
+        
+          ! Locals
+          integer(HID_T) :: dataset_id, dataspace_id
+          logical :: link_exists
+          integer :: hdferr
+          integer(HSIZE_T) :: dims(2), maxdims(2)
+          integer :: rank
+          real*4, allocatable :: temp_data(:,:)  ! Temporary buffer for data
+          logical :: already_allocated
+        
+          ierr = 0
+        
+          ! Check if dataset exists
+          call h5lexists_f(file_id, trim(dataset), link_exists, hdferr)
+          if (hdferr /= 0 .or. .not. link_exists) then
+            write(LDT_logunit,*)'[ERR] Dataset not found: ', trim(dataset)
+            ierr = 1
+            return
+          endif
+        
+          ! Open the dataset
+          call h5dopen_f(file_id, trim(dataset), dataset_id, hdferr)
+          if (hdferr /= 0) then
+            write(LDT_logunit,*)'[ERR] Cannot open dataset: ', trim(dataset)
+            ierr = 1
+            return
+          endif
+        
+          ! Get the dataspace and dimensions
+          call h5dget_space_f(dataset_id, dataspace_id, hdferr)
+          if (hdferr /= 0) then
+            write(LDT_logunit,*)'[ERR] Cannot get dataspace for: ', trim(dataset)
+            call h5dclose_f(dataset_id, hdferr)
+            ierr = 1
+            return
+          endif
+        
+          ! Get the rank
+          call h5sget_simple_extent_ndims_f(dataspace_id, rank, hdferr)
+          if (hdferr /= 0) then
+            write(LDT_logunit,*)'[ERR] Cannot get rank for: ', trim(dataset)
+            call h5sclose_f(dataspace_id, hdferr)
+            call h5dclose_f(dataset_id, hdferr)
+            ierr = 1
+            return
+          endif
+        
+          ! Check that rank is 2
+          if (rank /= 2) then
+            write(LDT_logunit,*)'[ERR] Expected 2D dataset, found rank: ', rank
+            call h5sclose_f(dataspace_id, hdferr)
+            call h5dclose_f(dataset_id, hdferr)
+            ierr = 1
+            return
+          endif
+        
+          ! Get dimensions
+          call h5sget_simple_extent_dims_f(dataspace_id, dims, maxdims, hdferr)
+          if (hdferr < 0) then
+            write(LDT_logunit,*)'[ERR] Cannot get dimensions for: ', trim(dataset)
+            call h5sclose_f(dataspace_id, hdferr)
+            call h5dclose_f(dataset_id, hdferr)
+            ierr = 1
+            return
+          endif
+        
+          n = int(dims(1))
+          m = int(dims(2))
+          
+          write(LDT_logunit,*)'[DEBUG] Dataset dimensions for ', trim(dataset), ': ', n, 'x', m
+          
+          ! Check if already allocated with correct dimensions
+          already_allocated = allocated(var2d)
+          if (already_allocated) then
+            if (size(var2d,1) /= n .or. size(var2d,2) /= m) then
+              deallocate(var2d)
+              already_allocated = .false.
+            endif
+          endif
+          
+          ! Allocate if needed
+          if (.not. already_allocated) then
+            allocate(temp_data(n, m), stat=hdferr)
+            if (hdferr /= 0) then
+              write(LDT_logunit,*)'[ERR] Memory allocation failed for temp data array'
               call h5sclose_f(dataspace_id, hdferr)
               call h5dclose_f(dataset_id, hdferr)
-              
-              write(LDT_logunit,*)'[INFO] Successfully read brightness temperature data: ', trim(dataset)
-            end subroutine get_dataset_tb_2d
+              ierr = 1
+              return
+            endif
+            
+            ! Use a temporary array for reading to avoid potential memory corruption
+            temp_data = 0.0
+          
+            ! Read data into temporary array with native real type
+            call h5dread_f(dataset_id, H5T_NATIVE_REAL, temp_data, dims, hdferr)
+            if (hdferr /= 0) then
+              write(LDT_logunit,*)'[ERR] Cannot read data for: ', trim(dataset)
+              deallocate(temp_data)
+              call h5sclose_f(dataspace_id, hdferr)
+              call h5dclose_f(dataset_id, hdferr)
+              ierr = 1
+              return
+            endif
+            
+            ! Now allocate the output array and copy data
+            allocate(var2d(n, m), stat=hdferr)
+            if (hdferr /= 0) then
+              write(LDT_logunit,*)'[ERR] Memory allocation failed for output array'
+              deallocate(temp_data)
+              call h5sclose_f(dataspace_id, hdferr)
+              call h5dclose_f(dataset_id, hdferr)
+              ierr = 1
+              return
+            endif
+            
+            ! Copy data from temporary array and apply scaling if needed
+            var2d = temp_data
+            
+            ! Clean up temporary array
+            deallocate(temp_data)
+          else
+            ! If already allocated with correct dimensions, read directly
+            call h5dread_f(dataset_id, H5T_NATIVE_REAL, var2d, dims, hdferr)
+            if (hdferr /= 0) then
+              write(LDT_logunit,*)'[ERR] Cannot read data for: ', trim(dataset)
+              call h5sclose_f(dataspace_id, hdferr)
+              call h5dclose_f(dataset_id, hdferr)
+              ierr = 1
+              return
+            endif
+          endif
+          
+          ! Clean up
+          call h5sclose_f(dataspace_id, hdferr)
+          call h5dclose_f(dataset_id, hdferr)
+          
+          write(LDT_logunit,*)'[INFO] Successfully read brightness temperature data: ', trim(dataset)
+        end subroutine get_dataset_tb_2d
             
             ! Function for reading Land_Ocean Flag (uint8 3D array)
             subroutine get_dataset_land_ocean_flag(file_id, dataset, n, m, layer, var2d, ierr)
