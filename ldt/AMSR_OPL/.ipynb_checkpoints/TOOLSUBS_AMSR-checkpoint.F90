@@ -516,7 +516,7 @@ MODULE TOOLSUBS_AMSR
             endif
             
             ! Copy data from temporary array and apply scaling if needed
-            var2d = temp_data
+            var2d = temp_data*.01
             
             ! Clean up temporary array
             deallocate(temp_data)
@@ -784,96 +784,98 @@ MODULE TOOLSUBS_AMSR
             
             ! Function for reading scan time (float64)
             subroutine get_dataset_scan_time(file_id, dataset, n, time_arr, ierr)
-              use LDT_logMod, only: LDT_logunit
-              implicit none
-            
-              ! Arguments
-              integer(HID_T), intent(in) :: file_id
-              character(*), intent(in) :: dataset
-              integer, intent(out) :: n
-              real*8, allocatable, intent(out) :: time_arr(:)
-              integer, intent(out) :: ierr
-            
-              ! Locals
-              integer(HID_T) :: dataset_id, dataspace_id
-              logical :: link_exists
-              integer :: hdferr
-              integer(HSIZE_T) :: dims(1), maxdims(1)
-              integer :: rank
-            
-              ierr = 0
-            
-              ! Check if dataset exists
-              call h5lexists_f(file_id, trim(dataset), link_exists, hdferr)
-              if (hdferr /= 0 .or. .not. link_exists) then
-                write(LDT_logunit,*)'[ERR] Dataset not found: ', trim(dataset)
-                ierr = 1
-                return
-              endif
-            
-              ! Open the dataset
-              call h5dopen_f(file_id, trim(dataset), dataset_id, hdferr)
-              if (hdferr /= 0) then
-                write(LDT_logunit,*)'[ERR] Cannot open dataset: ', trim(dataset)
-                ierr = 1
-                return
-              endif
-            
-              ! Get the dataspace and dimensions
-              call h5dget_space_f(dataset_id, dataspace_id, hdferr)
-              if (hdferr /= 0) then
-                write(LDT_logunit,*)'[ERR] Cannot get dataspace for: ', trim(dataset)
-                call h5dclose_f(dataset_id, hdferr)
-                ierr = 1
-                return
-              endif
-            
-              call h5sget_simple_extent_ndims_f(dataspace_id, rank, hdferr)
-              if (hdferr /= 0 .or. rank /= 1) then
-                write(LDT_logunit,*)'[ERR] Expected 1D dataset, found rank: ', rank
+                use LDT_logMod, only: LDT_logunit
+                implicit none
+                
+                ! Arguments
+                integer(HID_T), intent(in) :: file_id
+                character(*), intent(in) :: dataset
+                integer, intent(out) :: n
+                real*8, allocatable, intent(out) :: time_arr(:)
+                integer, intent(out) :: ierr
+                
+                ! Locals
+                integer(HID_T) :: dataset_id, dataspace_id
+                logical :: link_exists
+                integer :: hdferr
+                integer(HSIZE_T) :: dims(1), maxdims(1)
+                integer :: rank
+                
+                ierr = 0
+                
+                ! Check if dataset exists
+                call h5lexists_f(file_id, trim(dataset), link_exists, hdferr)
+                if (hdferr /= 0 .or. .not. link_exists) then
+                    write(LDT_logunit,*)'[ERR] Dataset not found: ', trim(dataset)
+                    ierr = 1
+                    return
+                endif
+                
+                ! Open the dataset
+                call h5dopen_f(file_id, trim(dataset), dataset_id, hdferr)
+                if (hdferr /= 0) then
+                    write(LDT_logunit,*)'[ERR] Cannot open dataset: ', trim(dataset)
+                    ierr = 1
+                    return
+                endif
+                
+                ! Get dimensions
+                call h5dget_space_f(dataset_id, dataspace_id, hdferr)
+                if (hdferr /= 0) then
+                    write(LDT_logunit,*)'[ERR] Cannot get dataspace: ', trim(dataset)
+                    call h5dclose_f(dataset_id, hdferr)
+                    ierr = 1
+                    return
+                endif
+                
+                call h5sget_simple_extent_ndims_f(dataspace_id, rank, hdferr)
+                if (hdferr /= 0 .or. rank /= 1) then
+                    write(LDT_logunit,*)'[ERR] Expected 1D dataset for scan time, found rank: ', rank
+                    call h5sclose_f(dataspace_id, hdferr)
+                    call h5dclose_f(dataset_id, hdferr)
+                    ierr = 1
+                    return
+                endif
+                
+                call h5sget_simple_extent_dims_f(dataspace_id, dims, maxdims, hdferr)
+                if (hdferr < 0) then
+                    write(LDT_logunit,*)'[ERR] Cannot get dimensions for: ', trim(dataset)
+                    call h5sclose_f(dataspace_id, hdferr)
+                    call h5dclose_f(dataset_id, hdferr)
+                    ierr = 1
+                    return
+                endif
+                
+                n = int(dims(1))
+                write(LDT_logunit,*)'[INFO] Scan time array length: ', n
+                
+                ! Allocate output array with correct dimension
+                if (allocated(time_arr)) deallocate(time_arr)
+                allocate(time_arr(n), stat=hdferr)
+                if (hdferr /= 0) then
+                    write(LDT_logunit,*)'[ERR] Memory allocation failed for scan time array'
+                    call h5sclose_f(dataspace_id, hdferr)
+                    call h5dclose_f(dataset_id, hdferr)
+                    ierr = 1
+                    return
+                endif
+                
+                ! Read data directly (TAI93 values as float64)
+                call h5dread_f(dataset_id, H5T_NATIVE_DOUBLE, time_arr, dims, hdferr)
+                if (hdferr /= 0) then
+                    write(LDT_logunit,*)'[ERR] Cannot read data for: ', trim(dataset)
+                    deallocate(time_arr)
+                    call h5sclose_f(dataspace_id, hdferr)
+                    call h5dclose_f(dataset_id, hdferr)
+                    ierr = 1
+                    return
+                endif
+                
+                ! Clean up
                 call h5sclose_f(dataspace_id, hdferr)
                 call h5dclose_f(dataset_id, hdferr)
-                ierr = 1
-                return
-              endif
-            
-              call h5sget_simple_extent_dims_f(dataspace_id, dims, maxdims, hdferr)
-              if (hdferr < 0) then
-                write(LDT_logunit,*)'[ERR] Cannot get dimensions for: ', trim(dataset)
-                call h5sclose_f(dataspace_id, hdferr)
-                call h5dclose_f(dataset_id, hdferr)
-                ierr = 1
-                return
-              endif
-            
-              n = int(dims(1))
-              
-              ! Allocate output array
-              allocate(time_arr(n), stat=hdferr)
-              if (hdferr /= 0) then
-                write(LDT_logunit,*)'[ERR] Memory allocation failed for time array'
-                call h5sclose_f(dataspace_id, hdferr)
-                call h5dclose_f(dataset_id, hdferr)
-                ierr = 1
-                return
-              endif
-              
-              ! Read data directly (float64)
-              call h5dread_f(dataset_id, H5T_NATIVE_DOUBLE, time_arr, dims, hdferr)
-              if (hdferr /= 0) then
-                write(LDT_logunit,*)'[ERR] Cannot read data for: ', trim(dataset)
-                deallocate(time_arr)
-                call h5sclose_f(dataspace_id, hdferr)
-                call h5dclose_f(dataset_id, hdferr)
-                ierr = 1
-                return
-              endif
-              
-              ! Clean up
-              call h5sclose_f(dataspace_id, hdferr)
-              call h5dclose_f(dataset_id, hdferr)
-              
-              write(LDT_logunit,*)'[INFO] Successfully read scan time data'
+                
+                write(LDT_logunit,*)'[INFO] Successfully read scan time data'
             end subroutine get_dataset_scan_time
             
             ! Function for reading pixel quality flags (uint8)

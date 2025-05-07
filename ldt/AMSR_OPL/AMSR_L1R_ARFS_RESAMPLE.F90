@@ -151,8 +151,6 @@ subroutine AMSR_L1R_RESAMPLE(AMSRFILE,L1R_dir,Orbit,ARFS_TIME,rc)
     variable_name(10) = 'ARFS_TB_89H'
     variable_name(11) = 'ARFS_TB_89V'
     variable_name(12) = 'ARFS_LAND_WATER_FRAC'
-    variable_name(13) = 'ARFS_LAT'
-    variable_name(14) = 'ARFS_LON'
     
     
     L1R_dir_len = len_trim(L1R_dir)
@@ -212,12 +210,6 @@ subroutine AMSR_L1R_RESAMPLE(AMSRFILE,L1R_dir,Orbit,ARFS_TIME,rc)
        CLOSE(151)
        OPEN(UNIT=151, FILE=resample_filename(11),FORM='UNFORMATTED',ACCESS='DIRECT', RECL=arfs_nrow_lat*arfs_mcol_lon*4)
        WRITE(UNIT=151, REC = 1) ARFS_TB_89V
-       CLOSE(151)
-       OPEN(UNIT=151, FILE=resample_filename(12),FORM='UNFORMATTED',ACCESS='DIRECT', RECL=arfs_nrow_lat*arfs_mcol_lon*4)
-       WRITE(UNIT=151, REC = 1) ARFS_LAND_WATER_FRAC
-       CLOSE(151)
-       OPEN(UNIT=151, FILE=resample_filename(13),FORM='UNFORMATTED',ACCESS='DIRECT', RECL=arfs_nrow_lat*arfs_mcol_lon*4)
-       WRITE(UNIT=151, REC = 1) ARFS_LAND_WATER_FRAC
        CLOSE(151)
        OPEN(UNIT=151, FILE=resample_filename(12),FORM='UNFORMATTED',ACCESS='DIRECT', RECL=arfs_nrow_lat*arfs_mcol_lon*4)
        WRITE(UNIT=151, REC = 1) ARFS_LAND_WATER_FRAC

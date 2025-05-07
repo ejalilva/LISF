@@ -155,4 +155,10 @@ subroutine get_UTC_amsr(n,TIMEsec,UTChr)
      enddo
   enddo
 
+write(LDT_logunit,*) '[DEBUG] UTChr statistics:'
+write(LDT_logunit,*) '  Min UTChr:', MINVAL(UTChr, MASK=(UTChr > -9990))
+write(LDT_logunit,*) '  Max UTChr:', MAXVAL(UTChr, MASK=(UTChr > -9990))
+write(LDT_logunit,*) '  Count of negative UTChr:', COUNT(UTChr < 0)
+write(LDT_logunit,*) '  Count of undefined UTChr:', COUNT(UTChr < -9990)
+    
 end subroutine get_UTC_amsr

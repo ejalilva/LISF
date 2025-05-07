@@ -80,6 +80,14 @@ subroutine ARFSSMRETRIEVAL_AMSR(AMSRFILE, &
 
     real :: TS_A, TS_B
 
+    integer :: count_valid_points = 0
+    integer :: count_tbh_invalid = 0
+    integer :: count_ts_invalid = 0
+    integer :: count_snow_invalid = 0
+    integer :: count_bd_invalid = 0
+    integer :: count_lc_invalid = 0
+    integer :: count_utc_invalid = 0
+
     nrow=2560
     mcol=1920
 
@@ -158,11 +166,33 @@ subroutine ARFSSMRETRIEVAL_AMSR(AMSRFILE, &
          h=secondUTChr)
     call ESMF_TimeGet(thirdtime, yy=thirdUTCyr, mm=thirdUTCmo, dd=thirdUTCdy, &
          h=thirdUTChr)
+    
+    ! E.J: logging for debugging purpose
+    write(LDT_logunit,*) '[DEBUG] Time interpolation:'
+    write(LDT_logunit,*) '  firstUTCyr, firstUTCmo, firstUTCdy, firstUTChr:', &
+         firstUTCyr, firstUTCmo, firstUTCdy, firstUTChr
+    write(LDT_logunit,*) '  secondUTCyr, secondUTCmo, secondUTCdy, secondUTChr:', &
+         secondUTCyr, secondUTCmo, secondUTCdy, secondUTChr
+    write(LDT_logunit,*) '  thirdUTCyr, thirdUTCmo, thirdUTCdy, thirdUTChr:', &
+         thirdUTCyr, thirdUTCmo, thirdUTCdy, thirdUTChr
 
+    write(LDT_logunit,*) '  ARFS_TS_01 stats (min, max, count<0):', &
+         MINVAL(ARFS_TS_01, MASK=(ARFS_TS_01 > -9990)), &
+         MAXVAL(ARFS_TS_01, MASK=(ARFS_TS_01 > -9990)), &
+         COUNT(ARFS_TS_01 <= 0)
+    write(LDT_logunit,*) '  ARFS_TS_02 stats (min, max, count<0):', &
+         MINVAL(ARFS_TS_02, MASK=(ARFS_TS_02 > -9990)), &
+         MAXVAL(ARFS_TS_02, MASK=(ARFS_TS_02 > -9990)), &
+         COUNT(ARFS_TS_02 <= 0)
+    write(LDT_logunit,*) '  ARFS_TS_03 stats (min, max, count<0):', &
+         MINVAL(ARFS_TS_03, MASK=(ARFS_TS_03 > -9990)), &
+         MAXVAL(ARFS_TS_03, MASK=(ARFS_TS_03 > -9990)), &
+         COUNT(ARFS_TS_03 <= 0)
+     
     DO j=1,mcol !COL LAT
        DO i=1,nrow !ROW LON
 
-          tbh = ARFS_TB(i,j)
+          tbh = ARFS_TB(i,j) 
 
           if (UTChr(i,j) < 0) cycle
 
@@ -193,13 +223,27 @@ subroutine ARFSSMRETRIEVAL_AMSR(AMSRFILE, &
              wgt = (10800. - deltasec) / 10800.
           end if
           if (TS_A > 0 .and. TS_B > 0) then
-             TS = ((wgt)*TS_A) + ((1. - wgt)*TS_B)
+             TS = ((wgt)*TS_A) + ((1. - wgt)*TS_B) ! E.J: This has just being used to test if TS is above 0 degree
           else
              cycle
           end if
 
-          IF (tbh.GT.0.0.AND.Ts.GT.0.AND.ARFS_SNOW(i,j).LE.AMSReOPL%SD_thold.AND.ARFS_BD(i,j).NE.-9999.AND.ARFS_LC(i,j).NE.0.AND.&
-            UTChr(i,j).GE.0) THEN
+          !IF (tbh.GT.0.0.AND.Ts.GT.0.AND.ARFS_SNOW(i,j).LE.AMSReOPL%SD_thold.AND.ARFS_BD(i,j).NE.-9999.AND.ARFS_LC(i,j).NE.0.AND.&
+           ! UTChr(i,j).GE.0) THEN
+          IF (tbh.LE.0.0) THEN
+             count_tbh_invalid = count_tbh_invalid + 1
+          ELSEIF (Ts.LE.0) THEN
+             count_ts_invalid = count_ts_invalid + 1
+          ELSEIF (ARFS_SNOW(i,j).GT.AMSReOPL%SD_thold) THEN
+             count_snow_invalid = count_snow_invalid + 1
+          ELSEIF (ARFS_BD(i,j).EQ.-9999) THEN
+             count_bd_invalid = count_bd_invalid + 1
+          ELSEIF (ARFS_LC(i,j).EQ.0) THEN
+             count_lc_invalid = count_lc_invalid + 1
+          ELSEIF (UTChr(i,j).LT.0) THEN
+             count_utc_invalid = count_utc_invalid + 1
+          ELSE
+             count_valid_points = count_valid_points + 1
              bulkdensity = ARFS_BD(i,j)
              clay = ARFS_CLAY(i,j)
              tau = ARFS_TAU(i,j)
@@ -239,5 +283,13 @@ subroutine ARFSSMRETRIEVAL_AMSR(AMSRFILE, &
          yyyymmdd, hhmmss)
     write (LDT_logunit,*) '[INFO] Successfully wrote soil moisture retrieval file ', trim(retrieval_fname)
     write (LDT_logunit,*) '[INFO] Finished generating soil moisture retrievals'
+    write(LDT_logunit,*) '[DEBUG] Filtering statistics:'
+    write(LDT_logunit,*) '  Valid points processed:', count_valid_points
+    write(LDT_logunit,*) '  Points with invalid tbh:', count_tbh_invalid
+    write(LDT_logunit,*) '  Points with invalid Ts:', count_ts_invalid
+    write(LDT_logunit,*) '  Points with snow above threshold:', count_snow_invalid
+    write(LDT_logunit,*) '  Points with invalid bulk density:', count_bd_invalid
+    write(LDT_logunit,*) '  Points with invalid land cover:', count_lc_invalid
+    write(LDT_logunit,*) '  Points with invalid UTC hour:', count_utc_invalid
 
  end subroutine ARFSSMRETRIEVAL_AMSR

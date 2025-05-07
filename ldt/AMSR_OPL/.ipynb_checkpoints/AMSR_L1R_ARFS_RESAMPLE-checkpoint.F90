@@ -152,6 +152,7 @@ subroutine AMSR_L1R_RESAMPLE(AMSRFILE,L1R_dir,Orbit,ARFS_TIME,rc)
     variable_name(11) = 'ARFS_TB_89V'
     variable_name(12) = 'ARFS_LAND_WATER_FRAC'
     
+    
     L1R_dir_len = len_trim(L1R_dir)
     L1R_fname_len = len_trim(AMSRFILE)
     Orbit = trim(AMSRFILE(L1R_dir_len+24:L1R_dir_len+24)) !E.J:  based on AMSR half-orbit file naming convention
@@ -213,7 +214,7 @@ subroutine AMSR_L1R_RESAMPLE(AMSRFILE,L1R_dir,Orbit,ARFS_TIME,rc)
        OPEN(UNIT=151, FILE=resample_filename(12),FORM='UNFORMATTED',ACCESS='DIRECT', RECL=arfs_nrow_lat*arfs_mcol_lon*4)
        WRITE(UNIT=151, REC = 1) ARFS_LAND_WATER_FRAC
        CLOSE(151)
-    endif
+       endif
 
     ! end of TODO for writting the outputfile
     !=================================================
