@@ -109,7 +109,7 @@ subroutine ARFSSMRETRIEVAL_AMSR(AMSRFILE, &
     write (LDT_logunit,*) '[INFO] Finished resampling effective soil temperature'
 
     ! get RESAMPLED TB
-    ARFS_TB = AMSReOPL%ARFS_TB_10H
+    ARFS_TB = AMSReOPL%ARFS_TB_10V ! changed it to TB_10V following SMAP SCA
 
     ! LOAD TAU ------------------------------------------------------------
     write(DOY_chr,"(I0.3)") DOY
@@ -134,6 +134,12 @@ subroutine ARFSSMRETRIEVAL_AMSR(AMSRFILE, &
     CLOSE(1)
     write (LDT_logunit,*) '[INFO] Finished reading soil bulk density'
 
+    ! E.J: Debugging ********
+    write(LDT_logunit,*) '[INFO] PARAMETER STATISTICS:'
+    write(LDT_logunit,*) '  Bulk Density - min:', MINVAL(ARFS_BD), 'max:', MAXVAL(ARFS_BD)
+    write(LDT_logunit,*) '  Calculated upperbound range:', MINVAL(1-ARFS_BD/2.65), 'to', MAXVAL(1-ARFS_BD/2.65)
+
+    
     write (LDT_logunit,*) '[INFO] Reading soil clay fraction from ', trim(AMSReOPL%CLAYfile)
     OPEN(UNIT=1,FILE=AMSReOPL%CLAYfile,FORM='UNFORMATTED',ACCESS='DIRECT',RECL=4*nrow*mcol,STATUS='OLD',convert='little_endian') !Clay Fraction
     READ(1, rec=1) ARFS_CLAY
@@ -227,7 +233,12 @@ subroutine ARFSSMRETRIEVAL_AMSR(AMSRFILE, &
           else
              cycle
           end if
-
+          
+          ! ========
+          ! E.J: for debugging purpose just use the TS_01 to avoid using scan time data that is buggy and see if SM retrieval is working
+          TS = ARFS_TS_01(i,j)
+          !==========
+          
           !IF (tbh.GT.0.0.AND.Ts.GT.0.AND.ARFS_SNOW(i,j).LE.AMSReOPL%SD_thold.AND.ARFS_BD(i,j).NE.-9999.AND.ARFS_LC(i,j).NE.0.AND.&
            ! UTChr(i,j).GE.0) THEN
           IF (tbh.LE.0.0) THEN
@@ -246,8 +257,8 @@ subroutine ARFSSMRETRIEVAL_AMSR(AMSRFILE, &
              count_valid_points = count_valid_points + 1
              bulkdensity = ARFS_BD(i,j)
              clay = ARFS_CLAY(i,j)
-             tau = ARFS_TAU(i,j)
-             omega = ARFS_OMEGA(i,j)
+             tau = ARFS_TAU(i,j)*3 ! changing to account for conversion from L-band to xband 
+             omega = ARFS_OMEGA(i,j)*.1 ! changing to accout for conversion from L-band to xband 
              h = ARFS_H(i,j)
              topigbptype = ARFS_LC(i,j)
 

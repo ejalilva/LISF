@@ -14,6 +14,7 @@ MODULE algo_hpol_m
        FUNCTION algo_hpol_function(X) RESULT(simtbh)
         USE varsio_m_amsr
         USE mironov_m
+        USE LDT_logMod
 
         IMPLICIT NONE
 
@@ -41,6 +42,7 @@ MODULE algo_hpol_m
 
         SUBROUTINE algo_hpol (ii,jj,x1,x2,exitstate)
           USE varsio_m_amsr
+          USE LDT_logMod
           IMPLICIT NONE
  
           REAL(4), INTENT(IN)                      :: ii, jj
@@ -54,8 +56,6 @@ MODULE algo_hpol_m
           INTEGER(4)                               :: numvsm
           INTEGER(4)                               :: hh, opt
           REAL(4), DIMENSION(:), ALLOCATABLE, SAVE :: vsmvec, tbhvec
-          integer :: opt_count = 0, upper_count = 0, lower_count = 0, error_count = 0 ! E.J: for debugging purpose
-
           incvsm = 0.01
           upperbound = 1 - bulkdensity/2.65
           numvsm = FLOOR ((upperbound - lowerbound)/incvsm)
@@ -65,6 +65,18 @@ MODULE algo_hpol_m
              vsmvec(hh) = lowerbound + (numvsm-1)*incvsm - (hh-1)*incvsm
              tbhvec(hh) = algo_hpol_function(vsmvec(hh))
           ENDDO
+          
+          ! E.J: Debugging ********
+
+          IF (mod(int(ii),100) == 0 .AND. mod(int(jj),100) == 0) THEN
+             write(LDT_logunit,*) '[DEBUG] Pixel:', ii, jj, 'bulkdensity:', bulkdensity
+             write(LDT_logunit,*) '[DEBUG] upperbound:', upperbound, 'numvsm:', numvsm
+             write(LDT_logunit,*) '[DEBUG] tbh:', tbh, 'tbhvec range:', tbhvec(1), 'to', tbhvec(numvsm) 
+             write(LDT_logunit,*) '[DEBUG] tbhvec range check:', tbhvec(numvsm) - tbhvec(1), '>', NEDT
+             write(LDT_logunit,*) '[DEBUG] topigbptype:', topigbptype
+          ENDIF
+          ! E.J: Debugging ********
+
           IF (tbh >= tbhvec(1) - NEDT .AND. tbh <= tbhvec(numvsm) + NEDT) THEN
               IF (tbh < tbhvec(1)) THEN ! assigning tbh of residual soil moisture if tbh is smaller than smallest tbh
                   tbh = tbhvec(1)
@@ -76,11 +88,9 @@ MODULE algo_hpol_m
                    opt=MINLOC(ABS(tbh-tbhvec),1)
                    x = vsmvec(opt)
                    exitstate = 0
-                   opt_count = opt_count + 1
                ELSE
                    x = FillValue_float32
                    exitstate = 1
-                   error_count = error_count + 1
                ENDIF
           ELSEIF (tbh > tbhvec(numvsm) + NEDT) THEN
               IF (topigbptype >= 1 .AND. topigbptype <= 5) THEN
@@ -89,26 +99,17 @@ MODULE algo_hpol_m
                   x = lowerbound
               ENDIF
               exitstate = 1
-              upper_count = upper_count + 1
+          
+
           ELSEIF (tbh < tbhvec(1) - NEDT) THEN
               x = upperbound
               exitstate = 1
-              lower_count = lower_count + 1
           ELSE
               x = FillValue_float32
               exitstate = 1
-              error_count = error_count + 1
           ENDIF
           x1 = x
           x2 = tau
-          
-          ! for debuging purpose
-          write(LDT_logunit,*) '[DEBUG] algo_hpol statistics:'
-          write(LDT_logunit,*) '  Optimal SM count:', opt_count
-          write(LDT_logunit,*) '  Upper bound SM count:', upper_count
-          write(LDT_logunit,*) '  Lower bound SM count:', lower_count
-          write(LDT_logunit,*) '  Error count:', error_count
-          
           DEALLOCATE (vsmvec)
           DEALLOCATE (tbhvec)
  

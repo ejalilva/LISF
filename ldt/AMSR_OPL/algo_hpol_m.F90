@@ -14,6 +14,7 @@ MODULE algo_hpol_m
        FUNCTION algo_hpol_function(X) RESULT(simtbh)
         USE varsio_m_amsr
         USE mironov_m
+        USE LDT_logMod
 
         IMPLICIT NONE
 
@@ -41,6 +42,7 @@ MODULE algo_hpol_m
 
         SUBROUTINE algo_hpol (ii,jj,x1,x2,exitstate)
           USE varsio_m_amsr
+          USE LDT_logMod
           IMPLICIT NONE
  
           REAL(4), INTENT(IN)                      :: ii, jj
@@ -63,6 +65,18 @@ MODULE algo_hpol_m
              vsmvec(hh) = lowerbound + (numvsm-1)*incvsm - (hh-1)*incvsm
              tbhvec(hh) = algo_hpol_function(vsmvec(hh))
           ENDDO
+          
+          ! E.J: Debugging ********
+
+          IF (mod(int(ii),100) == 0 .AND. mod(int(jj),100) == 0) THEN
+             write(LDT_logunit,*) '[DEBUG] Pixel:', ii, jj, 'bulkdensity:', bulkdensity
+             write(LDT_logunit,*) '[DEBUG] upperbound:', upperbound, 'numvsm:', numvsm
+             write(LDT_logunit,*) '[DEBUG] tbh:', tbh, 'tbhvec range:', tbhvec(1), 'to', tbhvec(numvsm) 
+             write(LDT_logunit,*) '[DEBUG] tbhvec range check:', tbhvec(numvsm) - tbhvec(1), '>', NEDT
+             write(LDT_logunit,*) '[DEBUG] topigbptype:', topigbptype
+          ENDIF
+          ! E.J: Debugging ********
+
           IF (tbh >= tbhvec(1) - NEDT .AND. tbh <= tbhvec(numvsm) + NEDT) THEN
               IF (tbh < tbhvec(1)) THEN ! assigning tbh of residual soil moisture if tbh is smaller than smallest tbh
                   tbh = tbhvec(1)
@@ -85,6 +99,8 @@ MODULE algo_hpol_m
                   x = lowerbound
               ENDIF
               exitstate = 1
+          
+
           ELSEIF (tbh < tbhvec(1) - NEDT) THEN
               x = upperbound
               exitstate = 1
