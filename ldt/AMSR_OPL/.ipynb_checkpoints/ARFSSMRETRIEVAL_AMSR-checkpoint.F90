@@ -54,7 +54,7 @@ subroutine ARFSSMRETRIEVAL_AMSR(AMSRFILE, &
     CHARACTER (len=100) :: fname_TAU    
     CHARACTER (len=5) :: DOY_chr
     REAL*4 :: C, K, sm_retrieval, tau_return
-    REAL*4, DIMENSION(2560,1920) :: ARFS_TB
+    REAL*4, DIMENSION(2560,1920) :: ARFS_TB, ARFS_TB_37V
     REAL*4, DIMENSION(2560,1920) :: ARFS_TAU, ARFS_CLAY, ARFS_BD, ARFS_OMEGA, ARFS_H
     INTEGER*1, DIMENSION(2560,1920) :: ARFS_LC, ARFS_SM_FLAG
     INTEGER*1 :: retrieval_flag
@@ -109,7 +109,8 @@ subroutine ARFSSMRETRIEVAL_AMSR(AMSRFILE, &
     write (LDT_logunit,*) '[INFO] Finished resampling effective soil temperature'
 
     ! get RESAMPLED TB
-    ARFS_TB = AMSReOPL%ARFS_TB_10V ! changed it to TB_10V following SMAP SCA
+    ARFS_TB = AMSReOPL%ARFS_TB_10H
+    ARFS_TB_37V = AMSReOPL%ARFS_TB_36V ! added for calculation of TS based on 37GHz band
 
     ! LOAD TAU ------------------------------------------------------------
     write(DOY_chr,"(I0.3)") DOY
@@ -236,7 +237,9 @@ subroutine ARFSSMRETRIEVAL_AMSR(AMSRFILE, &
           
           ! ========
           ! E.J: for debugging purpose just use the TS_01 to avoid using scan time data that is buggy and see if SM retrieval is working
-          TS = ARFS_TS_01(i,j)
+          !TS = ARFS_TS_01(i,j)
+          ! E.J: using the 37 GHz band TS 
+          TS =1.11*ARFS_TB_37V(i,j)-15.2
           !==========
           
           !IF (tbh.GT.0.0.AND.Ts.GT.0.AND.ARFS_SNOW(i,j).LE.AMSReOPL%SD_thold.AND.ARFS_BD(i,j).NE.-9999.AND.ARFS_LC(i,j).NE.0.AND.&
@@ -257,8 +260,8 @@ subroutine ARFSSMRETRIEVAL_AMSR(AMSRFILE, &
              count_valid_points = count_valid_points + 1
              bulkdensity = ARFS_BD(i,j)
              clay = ARFS_CLAY(i,j)
-             tau = ARFS_TAU(i,j)*3 ! changing to account for conversion from L-band to xband 
-             omega = ARFS_OMEGA(i,j)*.1 ! changing to accout for conversion from L-band to xband 
+             tau = ARFS_TAU(i,j)*1.3353 ! changing to account for conversion from L-band to xband to account for frequency difference multiplied by Sec(55)/sec(40) ~ 1.3353
+             omega = ARFS_OMEGA(i,j) ! changing to accout for conversion from L-band to xband 
              h = ARFS_H(i,j)
              topigbptype = ARFS_LC(i,j)
 
@@ -274,16 +277,20 @@ subroutine ARFSSMRETRIEVAL_AMSR(AMSRFILE, &
     L1R_dir_len = len_trim(AMSReOPL%L1Rdir)
     L1R_fname_len = len_trim(AMSRFILE)
 
+    ! TODO: make H and V automatic based on which pol is used in retrieval (also LIS teff or 37teff should be automatically reflected in the naming.
+    
     if(AMSReOPL%L1Rtype.eq.1) then  !NRT
-       retrieval_fname = trim(AMSReOPL%SMoutdir)//"/"//"ARFS_SM_V_"//&
-                         trim(AMSRFILE(L1R_dir_len+18:L1R_fname_len-3))//".nc"
-       yyyymmdd = trim(AMSRFILE(L1R_fname_len-28:L1R_fname_len-20))
-       hhmmss = trim(AMSRFILE(L1R_fname_len-19:L1R_fname_len-13))
+       retrieval_fname = trim(AMSReOPL%SMoutdir)//"/"//"ARFS_SM_H_"//& 
+                         trim(AMSRFILE(L1R_dir_len+9:L1R_fname_len-3))//".nc"
+       yyyymmdd = trim(AMSRFILE(L1R_dir_len+9:L1R_dir_len+15))
+       hhmmss = trim(AMSRFILE(L1R_dir_len+16:L1R_dir_len+19))
     elseif(AMSReOPL%L1Rtype.eq.2) then  !Historical
-       retrieval_fname = trim(AMSReOPL%SMoutdir)//"/"//"ARFS_SM_V_"//&
-            trim(AMSRFILE(L1R_dir_len+14:L1R_fname_len-3))//".nc"
-       yyyymmdd = trim(AMSRFILE(L1R_fname_len-28:L1R_fname_len-20))
-       hhmmss = trim(AMSRFILE(L1R_fname_len-19:L1R_fname_len-13))
+       retrieval_fname = trim(AMSReOPL%SMoutdir)//"/"//"ARFS_SM_H_"//&
+            trim(AMSRFILE(L1R_dir_len+9:L1R_fname_len-3))//".nc"
+       yyyymmdd = trim(AMSRFILE(L1R_dir_len+9:L1R_dir_len+15))
+       hhmmss = trim(AMSRFILE(L1R_dir_len+16:L1R_dir_len+19))
+       write (LDT_logunit,*) 'yyyymmhh: ', trim(yyyymmdd), ', hhmmss: ', trim(hhmmss)
+
     endif
 
     write (LDT_logunit,*) '[INFO] Writing soil moisture retrieval file ', trim(retrieval_fname)
