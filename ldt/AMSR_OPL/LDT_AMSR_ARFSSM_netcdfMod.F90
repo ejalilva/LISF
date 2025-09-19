@@ -52,7 +52,7 @@ contains
     real*4, intent(in) :: arfs_sm(nc,nr)
     character(*), intent(in) :: retrieval_fname
     character(8), intent(in) :: yyyymmdd
-    character(6), intent(in) :: hhmmss
+    character(4), intent(in) :: hhmmss
 
     ! Locals
     integer :: shuffle, deflate, deflate_level
@@ -196,7 +196,7 @@ contains
               "seconds since "//yyyymmdd(1:4)//"-" &
               //yyyymmdd(5:6)//"-" &
               //yyyymmdd(7:8)//" " &
-              //hhmmss(1:2)//":"//hhmmss(3:4)//":"//hhmmss(5:6)
+              //hhmmss(1:2)//":"//hhmmss(3:4)
          call LDT_verify(nf90_put_att(ncid, time_varid, &
               "units", trim(time_units)), &
               '[ERR] nf90_put_att failed')
@@ -306,7 +306,7 @@ contains
     real*4, intent(in) :: arfs_sm(nc,nr)
     character(*), intent(in) :: retrieval_fname
     character(8), intent(in) :: yyyymmdd
-    character(6), intent(in) :: hhmmss
+    character(4), intent(in) :: hhmmss
     write(LDT_logunit,*)'[ERR] LDT not compiled with NETCDF support!'
     write(LDT_logunit,*)'Cannot write ARFS SM retrieval in NETCDF format!'
     write(LDT_logunit,*)'Recompile with NETCDF support and try again!'

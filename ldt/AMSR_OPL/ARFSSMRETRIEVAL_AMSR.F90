@@ -72,7 +72,7 @@ subroutine ARFSSMRETRIEVAL_AMSR(AMSRFILE, &
 
     ! EMK
     character(8) :: yyyymmdd
-    character(6) :: hhmmss
+    character(4) :: hhmmss
     real :: deltasec, wgt
     integer :: firstUTCyr, firstUTCmo, firstUTCdy, firstUTChr
     integer :: secondUTCyr, secondUTCmo, secondUTCdy, secondUTChr
@@ -276,7 +276,7 @@ subroutine ARFSSMRETRIEVAL_AMSR(AMSRFILE, &
     !write soil moisture retrieval outputs
     L1R_dir_len = len_trim(AMSReOPL%L1Rdir)
     L1R_fname_len = len_trim(AMSRFILE)
-
+    !Orbit = trim(AMSRFILE(L1R_dir_len+24:L1R_dir_len+24))
     ! TODO: make H and V automatic based on which pol is used in retrieval (also LIS teff or 37teff should be automatically reflected in the naming.
     
     if(AMSReOPL%L1Rtype.eq.1) then  !NRT
