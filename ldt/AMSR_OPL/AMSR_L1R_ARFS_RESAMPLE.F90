@@ -33,7 +33,9 @@ subroutine AMSR_L1R_RESAMPLE(AMSRFILE,L1R_dir,Orbit,ARFS_TIME,rc)
   USE invdist_l1r2arfs
   USE LDT_logMod
   USE LDT_amsr_oplMod
-
+  USE ESMF
+  USE netcdf
+  
   IMPLICIT NONE
 
   INTEGER :: i, j, nrow, mcol
@@ -62,6 +64,21 @@ subroutine AMSR_L1R_RESAMPLE(AMSRFILE,L1R_dir,Orbit,ARFS_TIME,rc)
   !INTEGER*4,DIMENSION(2560,1920),ALLOCATABLE :: ARFS_RFI_FLAG
 
   REAL :: T1, T2
+  character(len=200) :: netcdf_filename
+  character(len=12) :: datetime_str  
+  integer :: filename_start_pos
+  integer :: year, month, day, hour, minute
+  type(ESMF_Time) :: file_time, reference_time
+  type(ESMF_TimeInterval) :: time_diff
+  real*8 :: time_seconds
+  integer :: rc_time
+  integer :: ncid, time_dimid, lat_dimid, lon_dimid
+  integer :: time_varid, lat_varid, lon_varid
+  integer :: tb_10h_varid, tb_10v_varid, tb_18h_varid, tb_18v_varid
+  integer :: tb_23h_varid, tb_23v_varid, tb_36h_varid, tb_36v_varid  
+  integer :: tb_89h_varid, tb_89v_varid, lwf_varid
+  integer :: iret
+  real, allocatable :: lats(:), lons(:)
 
   rc = 0
   ! Extra logging for debug
@@ -165,56 +182,178 @@ subroutine AMSR_L1R_RESAMPLE(AMSRFILE,L1R_dir,Orbit,ARFS_TIME,rc)
   
     !=================================================
     ! TODO: check the SMAPL1BTOL1C_ARFS.F90 for writing the file and modify the following for AMSR2 L1R reader
-    if(AMSReOPL%L1RresampWriteOpt.eq.1) then
-       if(AMSReOPL%L1Rtype.eq.1) then  !NRT
-          do var_i=1,12
-             resample_filename(var_i) = trim(AMSReOPL%L1Rresampledir_02)//"/"//trim(variable_name(var_i))//"_"//& ! EJ: Where L1Bresampledir_02 is being set
-                                        trim(AMSRFILE(L1R_dir_len+18:L1R_fname_len-3))//".dat"
-          enddo
-       elseif(AMSReOPL%L1Rtype.eq.2) then  !Historical
-          do var_i=1,12
-             resample_filename(var_i) = trim(AMSReOPL%L1Rresampledir_02)//"/"//trim(variable_name(var_i))//"_"//&
-                                        trim(AMSRFILE(L1R_dir_len+14:L1R_fname_len-3))//".dat"
-          enddo
-       endif
+    ! Modified section for AMSR_L1R_ARFS_RESAMPLE.F90
+    ! Replace the existing file writing section with this NetCDF version
 
-       OPEN(UNIT=151, FILE=resample_filename(1),FORM='UNFORMATTED',ACCESS='DIRECT', RECL=arfs_nrow_lat*arfs_mcol_lon*8)
-       WRITE(UNIT=151, REC = 1) ARFS_TIME
-       CLOSE(151)
-       OPEN(UNIT=151, FILE=resample_filename(2),FORM='UNFORMATTED',ACCESS='DIRECT', RECL=arfs_nrow_lat*arfs_mcol_lon*4)
-       WRITE(UNIT=151, REC = 1) ARFS_TB_10H
-       CLOSE(151)
-       OPEN(UNIT=151, FILE=resample_filename(3),FORM='UNFORMATTED',ACCESS='DIRECT', RECL=arfs_nrow_lat*arfs_mcol_lon*4)
-       WRITE(UNIT=151, REC = 1) ARFS_TB_10V
-       CLOSE(151)
-       OPEN(UNIT=151, FILE=resample_filename(4),FORM='UNFORMATTED',ACCESS='DIRECT', RECL=arfs_nrow_lat*arfs_mcol_lon*4)
-       WRITE(UNIT=151, REC = 1) ARFS_TB_18H
-       CLOSE(151)
-       OPEN(UNIT=151, FILE=resample_filename(5),FORM='UNFORMATTED',ACCESS='DIRECT', RECL=arfs_nrow_lat*arfs_mcol_lon*4)
-       WRITE(UNIT=151, REC = 1) ARFS_TB_18V
-       CLOSE(151)
-       OPEN(UNIT=151, FILE=resample_filename(6),FORM='UNFORMATTED',ACCESS='DIRECT', RECL=arfs_nrow_lat*arfs_mcol_lon*4)
-       WRITE(UNIT=151, REC = 1) ARFS_TB_23H
-       CLOSE(151)
-       OPEN(UNIT=151, FILE=resample_filename(7),FORM='UNFORMATTED',ACCESS='DIRECT', RECL=arfs_nrow_lat*arfs_mcol_lon*4)
-       WRITE(UNIT=151, REC = 1) ARFS_TB_23V
-       CLOSE(151)
-       OPEN(UNIT=151, FILE=resample_filename(8),FORM='UNFORMATTED',ACCESS='DIRECT', RECL=arfs_nrow_lat*arfs_mcol_lon*4)
-       WRITE(UNIT=151, REC = 1) ARFS_TB_36H
-       CLOSE(151)
-       OPEN(UNIT=151, FILE=resample_filename(9),FORM='UNFORMATTED',ACCESS='DIRECT', RECL=arfs_nrow_lat*arfs_mcol_lon*4)
-       WRITE(UNIT=151, REC = 1) ARFS_TB_36V
-       CLOSE(151)
-       OPEN(UNIT=151, FILE=resample_filename(10),FORM='UNFORMATTED',ACCESS='DIRECT', RECL=arfs_nrow_lat*arfs_mcol_lon*4)
-       WRITE(UNIT=151, REC = 1) ARFS_TB_89H
-       CLOSE(151)
-       OPEN(UNIT=151, FILE=resample_filename(11),FORM='UNFORMATTED',ACCESS='DIRECT', RECL=arfs_nrow_lat*arfs_mcol_lon*4)
-       WRITE(UNIT=151, REC = 1) ARFS_TB_89V
-       CLOSE(151)
-       OPEN(UNIT=151, FILE=resample_filename(12),FORM='UNFORMATTED',ACCESS='DIRECT', RECL=arfs_nrow_lat*arfs_mcol_lon*4)
-       WRITE(UNIT=151, REC = 1) ARFS_LAND_WATER_FRAC
-       CLOSE(151)
+    if(AMSReOPL%L1RresampWriteOpt.eq.1) then
+       
+       ! Construct NetCDF filename
+       if(AMSReOPL%L1Rtype.eq.1) then  !NRT
+          netcdf_filename = trim(AMSReOPL%L1Rresampledir_02)//"/AMSR_L1R_resampled_"//&
+                            trim(AMSRFILE(L1R_dir_len+18:L1R_fname_len-3))//".nc"
+       elseif(AMSReOPL%L1Rtype.eq.2) then  !Historical  
+          netcdf_filename = trim(AMSReOPL%L1Rresampledir_02)//"/AMSR_L1R_resampled_"//&
+                            trim(AMSRFILE(L1R_dir_len+14:L1R_fname_len-3))//".nc"
        endif
+       
+       ! Create NetCDF file
+       call LDT_verify(nf90_create(trim(netcdf_filename), NF90_NETCDF4, ncid), &
+            '[ERR] nf90_create failed for AMSR resampled output')
+       
+       ! Define dimensions
+       call LDT_verify(nf90_def_dim(ncid, 'time', 1, time_dimid), &
+            '[ERR] nf90_def_dim failed for time')
+       call LDT_verify(nf90_def_dim(ncid, 'lat', arfs_nrow_lat, lat_dimid), &
+            '[ERR] nf90_def_dim failed for lat')
+       call LDT_verify(nf90_def_dim(ncid, 'lon', arfs_mcol_lon, lon_dimid), &
+            '[ERR] nf90_def_dim failed for lon')
+       
+       ! Define coordinate variables
+       call LDT_verify(nf90_def_var(ncid, 'time', NF90_DOUBLE, time_dimid, time_varid), &
+            '[ERR] nf90_def_var failed for time')
+       call LDT_verify(nf90_def_var(ncid, 'lat', NF90_FLOAT, lat_dimid, lat_varid), &
+            '[ERR] nf90_def_var failed for lat')  
+       call LDT_verify(nf90_def_var(ncid, 'lon', NF90_FLOAT, lon_dimid, lon_varid), &
+            '[ERR] nf90_def_var failed for lon')
+       
+       ! Define data variables - all TB channels and land water fraction
+       call LDT_verify(nf90_def_var(ncid, 'TB_10H', NF90_FLOAT, &
+            [lon_dimid, lat_dimid], tb_10h_varid), &
+            '[ERR] nf90_def_var failed for TB_10H')
+       call LDT_verify(nf90_def_var(ncid, 'TB_10V', NF90_FLOAT, &
+            [lon_dimid, lat_dimid], tb_10v_varid), &
+            '[ERR] nf90_def_var failed for TB_10V')
+       call LDT_verify(nf90_def_var(ncid, 'TB_18H', NF90_FLOAT, &
+            [lon_dimid, lat_dimid], tb_18h_varid), &
+            '[ERR] nf90_def_var failed for TB_18H')
+       call LDT_verify(nf90_def_var(ncid, 'TB_18V', NF90_FLOAT, &
+            [lon_dimid, lat_dimid], tb_18v_varid), &
+            '[ERR] nf90_def_var failed for TB_18V')
+       call LDT_verify(nf90_def_var(ncid, 'TB_23H', NF90_FLOAT, &
+            [lon_dimid, lat_dimid], tb_23h_varid), &
+            '[ERR] nf90_def_var failed for TB_23H')
+       call LDT_verify(nf90_def_var(ncid, 'TB_23V', NF90_FLOAT, &
+            [lon_dimid, lat_dimid], tb_23v_varid), &
+            '[ERR] nf90_def_var failed for TB_23V')
+       call LDT_verify(nf90_def_var(ncid, 'TB_36H', NF90_FLOAT, &
+            [lon_dimid, lat_dimid], tb_36h_varid), &
+            '[ERR] nf90_def_var failed for TB_36H')
+       call LDT_verify(nf90_def_var(ncid, 'TB_36V', NF90_FLOAT, &
+            [lon_dimid, lat_dimid], tb_36v_varid), &
+            '[ERR] nf90_def_var failed for TB_36V')
+       call LDT_verify(nf90_def_var(ncid, 'TB_89H', NF90_FLOAT, &
+            [lon_dimid, lat_dimid], tb_89h_varid), &
+            '[ERR] nf90_def_var failed for TB_89H')
+       call LDT_verify(nf90_def_var(ncid, 'TB_89V', NF90_FLOAT, &
+            [lon_dimid, lat_dimid], tb_89v_varid), &
+            '[ERR] nf90_def_var failed for TB_89V')
+       call LDT_verify(nf90_def_var(ncid, 'LAND_WATER_FRAC', NF90_FLOAT, &
+            [lon_dimid, lat_dimid], lwf_varid), &
+            '[ERR] nf90_def_var failed for LAND_WATER_FRAC')
+       
+       ! Add variable attributes
+       call LDT_verify(nf90_put_att(ncid, time_varid, 'units', 'seconds since 1970-01-01 00:00:00'), &
+            '[ERR] nf90_put_att failed for time units')
+       call LDT_verify(nf90_put_att(ncid, time_varid, 'standard_name', 'time'), &
+            '[ERR] nf90_put_att failed for time standard_name')
+       call LDT_verify(nf90_put_att(ncid, time_varid, 'calendar', 'gregorian'), &
+            '[ERR] nf90_put_att failed for time calendar')
+       call LDT_verify(nf90_put_att(ncid, lat_varid, 'units', 'degrees_north'), &
+            '[ERR] nf90_put_att failed for lat units')
+       call LDT_verify(nf90_put_att(ncid, lon_varid, 'units', 'degrees_east'), &
+            '[ERR] nf90_put_att failed for lon units')
+       
+       call LDT_verify(nf90_put_att(ncid, tb_10h_varid, 'units', 'K'), &
+            '[ERR] nf90_put_att failed for TB_10H units')
+       call LDT_verify(nf90_put_att(ncid, tb_10h_varid, 'long_name', 'Brightness Temperature 10.65 GHz H-pol'), &
+            '[ERR] nf90_put_att failed for TB_10H long_name')
+       ! Add similar attributes for other TB variables...
+       
+       call LDT_verify(nf90_put_att(ncid, lwf_varid, 'units', 'fraction'), &
+            '[ERR] nf90_put_att failed for LAND_WATER_FRAC units')
+       call LDT_verify(nf90_put_att(ncid, lwf_varid, 'long_name', 'Land Water Fraction'), &
+            '[ERR] nf90_put_att failed for LAND_WATER_FRAC long_name')
+       
+       ! Add global attributes
+       call LDT_verify(nf90_put_att(ncid, NF90_GLOBAL, 'title', &
+            'AMSR L1R Resampled to ARFS Grid'), &
+            '[ERR] nf90_put_att failed for title')
+       call LDT_verify(nf90_put_att(ncid, NF90_GLOBAL, 'source_file', &
+            trim(AMSRFILE)), '[ERR] nf90_put_att failed for source_file')
+       
+       ! End definition mode
+       call LDT_verify(nf90_enddef(ncid), '[ERR] nf90_enddef failed')
+       
+       ! Write coordinate data  
+       allocate(lats(arfs_nrow_lat))
+       allocate(lons(arfs_mcol_lon))
+
+       lats = real(ARFS_LAT)  ! cast from REAL*8 to default REAL for NF90_FLOAT
+       lons = real(ARFS_LON)
+
+       call LDT_verify(nf90_put_var(ncid, lat_varid, lats), &
+            '[ERR] nf90_put_var failed for lats')
+       call LDT_verify(nf90_put_var(ncid, lon_varid, lons), &
+            '[ERR] nf90_put_var failed for lons')
+             
+       ! Find where filename starts (after the last slash)
+       filename_start_pos = index(AMSRFILE, '/', back=.true.) + 1
+       
+       ! Extract datetime from filename: YYYYMMDDHHMM at positions 7-18 of filename
+       ! Example: GW1AM2_202401011913_135D... -> 202401011913
+       datetime_str = AMSRFILE(filename_start_pos+6:filename_start_pos+17)
+       
+       ! Parse date/time components from YYYYMMDDHHMM
+       read(datetime_str(1:4), '(I4)') year
+       read(datetime_str(5:6), '(I2)') month  
+       read(datetime_str(7:8), '(I2)') day
+       read(datetime_str(9:10), '(I2)') hour
+       read(datetime_str(11:12), '(I2)') minute
+       
+       ! Create ESMF time objects
+       call ESMF_TimeSet(reference_time, yy=1970, mm=1, dd=1, h=0, m=0, s=0, rc=rc_time)
+       call ESMF_TimeSet(file_time, yy=year, mm=month, dd=day, h=hour, m=minute, s=0, rc=rc_time)
+       
+       ! Calculate time difference in seconds since epoch
+       time_diff = file_time - reference_time
+       call ESMF_TimeIntervalGet(time_diff, s_r8=time_seconds, rc=rc_time)
+       
+       call LDT_verify(nf90_put_var(ncid, time_varid, time_seconds), &
+            '[ERR] nf90_put_var failed for time')
+       
+       ! Write all brightness temperature and fraction data
+       call LDT_verify(nf90_put_var(ncid, tb_10h_varid, ARFS_TB_10H), &
+            '[ERR] nf90_put_var failed for TB_10H')
+       call LDT_verify(nf90_put_var(ncid, tb_10v_varid, ARFS_TB_10V), &
+            '[ERR] nf90_put_var failed for TB_10V')
+       call LDT_verify(nf90_put_var(ncid, tb_18h_varid, ARFS_TB_18H), &
+            '[ERR] nf90_put_var failed for TB_18H')
+       call LDT_verify(nf90_put_var(ncid, tb_18v_varid, ARFS_TB_18V), &
+            '[ERR] nf90_put_var failed for TB_18V')
+       call LDT_verify(nf90_put_var(ncid, tb_23h_varid, ARFS_TB_23H), &
+            '[ERR] nf90_put_var failed for TB_23H')
+       call LDT_verify(nf90_put_var(ncid, tb_23v_varid, ARFS_TB_23V), &
+            '[ERR] nf90_put_var failed for TB_23V')
+       call LDT_verify(nf90_put_var(ncid, tb_36h_varid, ARFS_TB_36H), &
+            '[ERR] nf90_put_var failed for TB_36H')
+       call LDT_verify(nf90_put_var(ncid, tb_36v_varid, ARFS_TB_36V), &
+            '[ERR] nf90_put_var failed for TB_36V')
+       call LDT_verify(nf90_put_var(ncid, tb_89h_varid, ARFS_TB_89H), &
+            '[ERR] nf90_put_var failed for TB_89H')
+       call LDT_verify(nf90_put_var(ncid, tb_89v_varid, ARFS_TB_89V), &
+            '[ERR] nf90_put_var failed for TB_89V')
+       call LDT_verify(nf90_put_var(ncid, lwf_varid, ARFS_LAND_WATER_FRAC), &
+            '[ERR] nf90_put_var failed for LAND_WATER_FRAC')
+       
+       ! Close the file
+       call LDT_verify(nf90_close(ncid), '[ERR] nf90_close failed')
+       
+       deallocate(lats)
+       deallocate(lons)
+       
+       write(LDT_logunit,*) '[INFO] Successfully wrote NetCDF resampled file: ', trim(netcdf_filename)
+       
+    endif
 
     ! end of TODO for writting the outputfile
     !=================================================
