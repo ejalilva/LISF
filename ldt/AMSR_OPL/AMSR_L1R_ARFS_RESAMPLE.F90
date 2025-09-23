@@ -41,7 +41,7 @@ subroutine AMSR_L1R_RESAMPLE(AMSRFILE,L1R_dir,Orbit,ARFS_TIME,rc)
   INTEGER :: i, j, nrow, mcol
   CHARACTER (len=100) :: AMSRFILE
   character (len=100) :: L1R_dir
-  character (len=20)  :: variable_name(12)
+  character (len=20)  :: variable_name(13)
   character (len=100) :: resample_filename(12)
   character (len=1)   :: Orbit ! E.J: orbit is one of the outputs extracted from the filename (D: Descending & A: Ascending)
   integer             :: var_i
@@ -55,16 +55,19 @@ subroutine AMSR_L1R_RESAMPLE(AMSRFILE,L1R_dir,Orbit,ARFS_TIME,rc)
   INTEGER*2,DIMENSION(:,:),ALLOCATABLE :: RFI_FLAG
   INTEGER*4,DIMENSION(:,:),ALLOCATABLE :: LAND_WATER_FRAC
   INTEGER*4,DIMENSION(:,:),ALLOCATABLE :: SNOW, PRECIP
+  INTEGER*1,DIMENSION(:,:),ALLOCATABLE :: QUALITY_FLAG               ! Footprint level
   INTEGER :: nrow89,ncol89 ! m89 & n89 are for the 89GHz band for which lat and lon are provided
 
   REAL*8,DIMENSION(:), ALLOCATABLE :: ARFS_LAT, ARFS_LON
   INTEGER*4,DIMENSION(2560,1920) :: ARFS_SAMPLE_V, ARFS_SAMPLE_H 
   REAL*8,DIMENSION(2560,1920) :: ARFS_TIME
   REAL*4,DIMENSION(2560,1920) :: ARFS_TB_10V, ARFS_TB_10H, ARFS_TB_18H, ARFS_TB_18V,ARFS_TB_23H, ARFS_TB_23V, ARFS_TB_36H, ARFS_TB_36V, ARFS_TB_89H, ARFS_TB_89V, ARFS_LAND_WATER_FRAC ! This is instead of ARFS_COR_TBV
+  INTEGER*1,DIMENSION(2560,1920) :: ARFS_QUALITY_FLAG
   !INTEGER*4,DIMENSION(2560,1920),ALLOCATABLE :: ARFS_RFI_FLAG
 
   REAL :: T1, T2
   character(len=200) :: netcdf_filename
+  character(len=100) ::  basename, extracted_part
   character(len=12) :: datetime_str  
   integer :: filename_start_pos
   integer :: year, month, day, hour, minute
@@ -76,7 +79,7 @@ subroutine AMSR_L1R_RESAMPLE(AMSRFILE,L1R_dir,Orbit,ARFS_TIME,rc)
   integer :: time_varid, lat_varid, lon_varid
   integer :: tb_10h_varid, tb_10v_varid, tb_18h_varid, tb_18v_varid
   integer :: tb_23h_varid, tb_23v_varid, tb_36h_varid, tb_36v_varid  
-  integer :: tb_89h_varid, tb_89v_varid, lwf_varid
+  integer :: tb_89h_varid, tb_89v_varid, lwf_varid, qf_varid
   integer :: iret
   real, allocatable :: lats(:), lons(:)
 
@@ -97,7 +100,7 @@ subroutine AMSR_L1R_RESAMPLE(AMSRFILE,L1R_dir,Orbit,ARFS_TIME,rc)
           TB_89V, TB_89H, &
           LAT_L1R, LON_L1R, LAT89, LON89, &
           LAND_WATER_FRAC, SNOW, PRECIP, &
-          RFI_FLAG, &
+          RFI_FLAG, QUALITY_FLAG, &
           nrow, mcol, nrow89,ncol89, ierr)
   ! TODO check all of these and find where they are called, nrow89,ncol89 perhaps in the invdist script the input to invdist should be modified
   
@@ -137,12 +140,13 @@ subroutine AMSR_L1R_RESAMPLE(AMSRFILE,L1R_dir,Orbit,ARFS_TIME,rc)
     
   CALL L1RTB2ARFS_INVDIS(TIME_L1R, TB_10H, TB_10V, TB_18H, TB_18V, TB_23H, TB_23V, &
           TB_36H, TB_36V, TB_89H, TB_89V, LAND_WATER_FRAC, &
-          SNOW, PRECIP, &
+          SNOW, PRECIP, QUALITY_FLAG, &  
           LAT_L1R, LON_L1R, nrow, mcol, &
           ARFS_LAT, ARFS_LON, ARFS_TIME, ARFS_LAND_WATER_FRAC, &
           ARFS_TB_10H, ARFS_TB_10V, ARFS_TB_18H, ARFS_TB_18V, &
           ARFS_TB_23H, ARFS_TB_23V, ARFS_TB_36H, ARFS_TB_36V, &
-          ARFS_TB_89H, ARFS_TB_89V, ARFS_SAMPLE_V, ARFS_SAMPLE_H)
+          ARFS_TB_89H, ARFS_TB_89V, ARFS_QUALITY_FLAG, & 
+          ARFS_SAMPLE_V, ARFS_SAMPLE_H)
   
   AMSReOPL%ARFS_TB_10H = ARFS_TB_10H
   AMSReOPL%ARFS_TB_10V = ARFS_TB_10V
@@ -155,6 +159,8 @@ subroutine AMSR_L1R_RESAMPLE(AMSRFILE,L1R_dir,Orbit,ARFS_TIME,rc)
   AMSReOPL%ARFS_TB_89H = ARFS_TB_89H
   AMSReOPL%ARFS_TB_89V = ARFS_TB_89V
   AMSReOPL%ARFS_LAND_WATER_FRAC = ARFS_LAND_WATER_FRAC
+  AMSReOPL%ARFS_QUALITY_FLAG = ARFS_QUALITY_FLAG
+
 
     variable_name(1)  = 'ARFS_TIME'
     variable_name(2)  = 'ARFS_TB_10H'
@@ -168,7 +174,7 @@ subroutine AMSR_L1R_RESAMPLE(AMSRFILE,L1R_dir,Orbit,ARFS_TIME,rc)
     variable_name(10) = 'ARFS_TB_89H'
     variable_name(11) = 'ARFS_TB_89V'
     variable_name(12) = 'ARFS_LAND_WATER_FRAC'
-    
+    variable_name(13) = 'ARFS_QUALITY_FLAG'
     
     L1R_dir_len = len_trim(L1R_dir)
     L1R_fname_len = len_trim(AMSRFILE)
@@ -186,14 +192,17 @@ subroutine AMSR_L1R_RESAMPLE(AMSRFILE,L1R_dir,Orbit,ARFS_TIME,rc)
     ! Replace the existing file writing section with this NetCDF version
 
     if(AMSReOPL%L1RresampWriteOpt.eq.1) then
+
+        filename_start_pos = index(AMSRFILE, '/', back=.true.) + 1
+        basename = AMSRFILE(filename_start_pos:)
+        extracted_part = basename(8:len_trim(basename)-3)
        
        ! Construct NetCDF filename
        if(AMSReOPL%L1Rtype.eq.1) then  !NRT
           netcdf_filename = trim(AMSReOPL%L1Rresampledir_02)//"/AMSR_L1R_resampled_"//&
                             trim(AMSRFILE(L1R_dir_len+18:L1R_fname_len-3))//".nc"
        elseif(AMSReOPL%L1Rtype.eq.2) then  !Historical  
-          netcdf_filename = trim(AMSReOPL%L1Rresampledir_02)//"/AMSR_L1R_resampled_"//&
-                            trim(AMSRFILE(L1R_dir_len+14:L1R_fname_len-3))//".nc"
+          netcdf_filename = trim(AMSReOPL%L1Rresampledir_02)//'/AMSR_L1R_resampled_'//trim(extracted_part)//'.nc'
        endif
        
        ! Create NetCDF file
@@ -250,13 +259,16 @@ subroutine AMSR_L1R_RESAMPLE(AMSRFILE,L1R_dir,Orbit,ARFS_TIME,rc)
        call LDT_verify(nf90_def_var(ncid, 'LAND_WATER_FRAC', NF90_FLOAT, &
             [lon_dimid, lat_dimid], lwf_varid), &
             '[ERR] nf90_def_var failed for LAND_WATER_FRAC')
+       call LDT_verify(nf90_def_var(ncid, 'QUALITY_FLAG', NF90_BYTE, &
+            [lon_dimid, lat_dimid], qf_varid), &
+            '[ERR] nf90_def_var failed for QUALITY_FLAG')
        
        ! Add variable attributes
-       call LDT_verify(nf90_put_att(ncid, time_varid, 'units', 'seconds since 1970-01-01 00:00:00'), &
+       call LDT_verify(nf90_put_att(ncid, time_varid, 'units', 'seconds since 1970-01-01T00:00:00Z'), &
             '[ERR] nf90_put_att failed for time units')
        call LDT_verify(nf90_put_att(ncid, time_varid, 'standard_name', 'time'), &
             '[ERR] nf90_put_att failed for time standard_name')
-       call LDT_verify(nf90_put_att(ncid, time_varid, 'calendar', 'gregorian'), &
+       call LDT_verify(nf90_put_att(ncid, time_varid, 'calendar', 'standard'), &
             '[ERR] nf90_put_att failed for time calendar')
        call LDT_verify(nf90_put_att(ncid, lat_varid, 'units', 'degrees_north'), &
             '[ERR] nf90_put_att failed for lat units')
@@ -273,7 +285,18 @@ subroutine AMSR_L1R_RESAMPLE(AMSRFILE,L1R_dir,Orbit,ARFS_TIME,rc)
             '[ERR] nf90_put_att failed for LAND_WATER_FRAC units')
        call LDT_verify(nf90_put_att(ncid, lwf_varid, 'long_name', 'Land Water Fraction'), &
             '[ERR] nf90_put_att failed for LAND_WATER_FRAC long_name')
-       
+
+       call LDT_verify(nf90_put_att(ncid, qf_varid, 'units', 'dimensionless'), &
+            '[ERR] nf90_put_att failed for QUALITY_FLAG units')
+       call LDT_verify(nf90_put_att(ncid, qf_varid, 'long_name', &
+            'Quality flags: bit0=ocean, bit1=precip, bit2=snow'), &
+            '[ERR] nf90_put_att failed for QUALITY_FLAG long_name')
+       call LDT_verify(nf90_put_att(ncid, qf_varid, 'flag_meanings', &
+            'ocean precipitation snow'), &
+            '[ERR] nf90_put_att failed for QUALITY_FLAG flag_meanings')
+       call LDT_verify(nf90_put_att(ncid, qf_varid, 'flag_masks', [1, 2, 4]), &
+            '[ERR] nf90_put_att failed for QUALITY_FLAG flag_masks')
+            
        ! Add global attributes
        call LDT_verify(nf90_put_att(ncid, NF90_GLOBAL, 'title', &
             'AMSR L1R Resampled to ARFS Grid'), &
@@ -299,9 +322,9 @@ subroutine AMSR_L1R_RESAMPLE(AMSRFILE,L1R_dir,Orbit,ARFS_TIME,rc)
        ! Find where filename starts (after the last slash)
        filename_start_pos = index(AMSRFILE, '/', back=.true.) + 1
        
-       ! Extract datetime from filename: YYYYMMDDHHMM at positions 7-18 of filename
+       ! Extract datetime from filename: YYYYMMDDHHMM at positions 8-19 of filename
        ! Example: GW1AM2_202401011913_135D... -> 202401011913
-       datetime_str = AMSRFILE(filename_start_pos+6:filename_start_pos+17)
+       datetime_str = basename(8:19)
        
        ! Parse date/time components from YYYYMMDDHHMM
        read(datetime_str(1:4), '(I4)') year
@@ -344,7 +367,9 @@ subroutine AMSR_L1R_RESAMPLE(AMSRFILE,L1R_dir,Orbit,ARFS_TIME,rc)
             '[ERR] nf90_put_var failed for TB_89V')
        call LDT_verify(nf90_put_var(ncid, lwf_varid, ARFS_LAND_WATER_FRAC), &
             '[ERR] nf90_put_var failed for LAND_WATER_FRAC')
-       
+       call LDT_verify(nf90_put_var(ncid, qf_varid, ARFS_QUALITY_FLAG), &
+            '[ERR] nf90_put_var failed for QUALITY_FLAG')
+            
        ! Close the file
        call LDT_verify(nf90_close(ncid), '[ERR] nf90_close failed')
        
@@ -379,5 +404,5 @@ subroutine AMSR_L1R_RESAMPLE(AMSRFILE,L1R_dir,Orbit,ARFS_TIME,rc)
   
   deallocate(ARFS_LAT)
   deallocate(ARFS_LON)
-
+  deallocate(QUALITY_FLAG)
 end subroutine AMSR_L1R_RESAMPLE

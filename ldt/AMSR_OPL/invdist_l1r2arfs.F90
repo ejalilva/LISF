@@ -25,14 +25,15 @@
  CONTAINS
    SUBROUTINE L1RTB2ARFS_INVDIS(tim, tb_10h, tb_10v, tb_18h, tb_18v, tb_23h, tb_23v, &
           tb_36h, tb_36v, tb_89h, tb_89v, land_water_frac, &
-          snow_flag, precip_flag, &
+          snow_flag, precip_flag, quality_flag, & 
           lat_l1r, lon_l1r, nrows_l1rtb, ncols_l1rtb, &
           !lat89, lon89, nrows_89, ncols_89, &
           !rfi_flag, arfs_rfi_flag
           ref_lat, ref_lon, arfs_tim, arfs_land_water_frac, &
           arfs_tb_10h, arfs_tb_10v, arfs_tb_18h, arfs_tb_18v, &
           arfs_tb_23h, arfs_tb_23v, arfs_tb_36h, arfs_tb_36v, &
-          arfs_tb_89h, arfs_tb_89v, arfs_samplenumv, arfs_samplenumh)
+          arfs_tb_89h, arfs_tb_89v, arfs_quality_flag, &
+          arfs_samplenumv, arfs_samplenumh)
    !SUBROUTINE L1BTB2ARFS_INVDIS(tim, tbvl1b_cor, tbhl1b_cor, tbvl1b, tbhl1b, surwat_v_l1b, surwat_h_l1b, &
         !netd_v_l1b, netd_h_l1b, lat_l1b, lon_l1b, tbv_qual_flag, tbh_qual_flag, sc_nadir_angle, antenna_scan_angle, nrows_l1btb, ncols_l1btb, &
         !ref_lat, ref_lon, arfs_tim, arfs_tbv_cor, arfs_tbh_cor, arfs_tbv, arfs_tbh, arfs_nedtv, arfs_nedth, &
@@ -40,7 +41,7 @@
 
      USE LDT_logMod, only: LDT_logunit ! Add this import for logging
 
-     INTEGER(4) :: ii, jj, k, r, c, rr, rmin, rmax, cc, cmin, cmax, nrows_l1rtb, ncols_l1rtb
+     INTEGER(4) :: i, j, ii, jj, k, r, c, rr, rmin, rmax, cc, cmin, cmax, nrows_l1rtb, ncols_l1rtb
      INTEGER(4), PARAMETER :: qualitybit = 0
      REAL(8), PARAMETER :: RE_KM = 6371.228, search_radius = 20.0, PI = 3.141592653589793238, d2r = PI/180.0
      REAL(8)  :: gcdist, lat1, lon1, lat2, lon2
@@ -48,7 +49,9 @@
      REAL*4,DIMENSION(nrows_l1rtb,ncols_l1rtb) :: tb_10h, tb_10v, tb_18h, tb_18v, tb_23h, tb_23v, tb_36h, tb_36v, tb_89h, tb_89v
      REAL*4,DIMENSION(nrows_l1rtb,ncols_l1rtb) :: lat_l1r, lon_l1r
      INTEGER*4,DIMENSION(nrows_l1rtb,ncols_l1rtb) :: snow_flag, precip_flag, land_water_frac
-     
+
+     INTEGER*1,DIMENSION(nrows_l1rtb,ncols_l1rtb) :: quality_flag            ! Input from TOOLSUBS
+
      !! TODO: uncomment for RFI_flag implementation
      !INTEGER(4) :: nrows_89, ncols_89
      !REAL*4,DIMENSION(nrows_89,ncols_89) :: lat89, lon89
@@ -62,6 +65,9 @@
      REAL*4,DIMENSION(2560,1920) :: arfs_tb_10h, arfs_tb_10v, arfs_tb_18h, arfs_tb_18v, arfs_tb_23h, arfs_tb_23v, arfs_tb_36h, arfs_tb_36v, arfs_tb_89h, arfs_tb_89v, arfs_land_water_frac
      REAL*4,DIMENSION(2560,1920) :: arfs_wt_tim, arfs_wt_tb10v, arfs_wt_tb10h, arfs_wt_tb18v, arfs_wt_tb18h, arfs_wt_tb23v, arfs_wt_tb23h, arfs_wt_tb36v, arfs_wt_tb36h, arfs_wt_tb89v, arfs_wt_tb89h, arfs_wt_land_water_frac
      INTEGER*4,DIMENSION(2560,1920) :: arfs_samplenumv, arfs_samplenumh
+     
+     INTEGER*1,DIMENSION(2560,1920) :: arfs_quality_flag                     ! Output grid
+     INTEGER,DIMENSION(2560,1920) :: snow_count, precip_count, ocean_count, total_count  ! Counters for majority vote
 
      !ALLOCATE(zerodistflag(size(ref_lat),size(ref_lon)))
      ALLOCATE(zerodistflag(size(ref_lon),size(ref_lat)))
@@ -95,6 +101,12 @@
      arfs_wt_tb89h=0.0
      arfs_wt_land_water_frac=0.0
      !arfs_wt_rfi_flag=0.0 ! uncomment for RFI flag
+     
+     arfs_quality_flag = 0
+     snow_count = 0
+     precip_count = 0
+     ocean_count = 0
+     total_count = 0
 
     ! Boundary check and debugging prints
     write(LDT_logunit,*) '[DEBUG] array dimensions:'
@@ -142,8 +154,15 @@
                           endif
 
                           IF (gcdist < search_radius) THEN !RESAMPLE ONLY WITHIN THE SEARCH RANGE
+                             total_count(rr,cc) = total_count(rr,cc) + 1
+                             IF (IBITS(quality_flag(jj,ii), 0, 1) == 1) ocean_count(rr,cc) = ocean_count(rr,cc) + 1
+                             IF (IBITS(quality_flag(jj,ii), 1, 1) == 1) precip_count(rr,cc) = precip_count(rr,cc) + 1  
+                             IF (IBITS(quality_flag(jj,ii), 2, 1) == 1) snow_count(rr,cc) = snow_count(rr,cc) + 1
+                             
                              IF (gcdist < 0.0001D0) THEN !The TB is right on the grid center
                                 zerodistflag (rr,cc) = 1
+                                arfs_quality_flag(rr,cc) = quality_flag(jj,ii)
+                                
                                 IF ((ABS (tim(ii) - (-9999.0)).GT.1.0D-7)) THEN !DO IF NOT FILLVALUE(-9999)
                                    arfs_tim(rr,cc) = tim(ii) ; arfs_wt_tim(rr,cc) = 1.0
                                 END IF
@@ -294,6 +313,26 @@
      WHERE(arfs_tb_89v.NE.0.0 .AND.arfs_wt_tb89v.NE.0.0)
         arfs_tb_89v= arfs_tb_89v / arfs_wt_tb89v
      END WHERE
+
+     ! Finalize quality flags using majority vote (only where no exact match occurred)
+    DO i = 1, 2560
+       DO j = 1, 1920
+          ! Only apply majority vote if no exact match was found (arfs_quality_flag still 0)
+          IF (arfs_quality_flag(i,j) == 0 .AND. total_count(i,j) > 0) THEN
+             ! Set flags based on majority (>50%)
+             IF (ocean_count(i,j) > total_count(i,j)/2) THEN
+                arfs_quality_flag(i,j) = IOR(arfs_quality_flag(i,j), 1)
+             END IF
+             IF (precip_count(i,j) > total_count(i,j)/2) THEN
+                arfs_quality_flag(i,j) = IOR(arfs_quality_flag(i,j), 2)
+             END IF
+             IF (snow_count(i,j) > total_count(i,j)/2) THEN
+                arfs_quality_flag(i,j) = IOR(arfs_quality_flag(i,j), 4)
+             END IF
+          END IF
+       END DO
+    END DO
+    
      WHERE(arfs_land_water_frac.NE.0.0 .AND.arfs_wt_land_water_frac.NE.0.0)
         arfs_land_water_frac = arfs_land_water_frac / arfs_wt_land_water_frac
      END WHERE

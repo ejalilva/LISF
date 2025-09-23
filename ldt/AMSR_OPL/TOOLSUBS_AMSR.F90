@@ -32,7 +32,7 @@ MODULE TOOLSUBS_AMSR
             tb_89v, tb_89h, &
             lat, lon, lat89, lon89, &
             land_water_frac, snow, precip, &
-            pixel_qual_flag, &
+            pixel_qual_flag, quality_flag, &
             n, m, m89, n89, ierr)
         
           ! Imports
@@ -47,12 +47,13 @@ MODULE TOOLSUBS_AMSR
           real*4, allocatable, intent(out) :: lat89(:,:), lon89(:,:)
           real*4, allocatable, intent(out) :: lat(:,:), lon(:,:)
           integer*2, allocatable, intent(out) :: pixel_qual_flag(:,:)
+          integer*4, allocatable, intent(out) :: snow(:,:), precip(:,:)
+          integer*1, allocatable, intent(out) :: quality_flag(:,:)
           integer, intent(out) :: m, n, m89, n89 ! m89 & n89 are for the 89GHz band for which lat and lon are provided
           integer :: i, j 
           integer, intent(out) :: ierr
           
           real :: sil, tt18  ! For intermediate snow and precip qual flag calculations
-          integer*4, allocatable :: snow(:,:), precip(:,:)
           
 #if (defined USE_HDF5)
           ! Locals
@@ -165,8 +166,10 @@ MODULE TOOLSUBS_AMSR
           if (.not. allocated(lat)) allocate(lat(n, m))
           if (.not. allocated(lon)) allocate(lon(n, m))
           
-          if (.not. allocated(snow)) allocate(snow(n, m))
-          if (.not. allocated(precip)) allocate(precip(n, m))
+          ! if (.not. allocated(snow)) allocate(snow(n, m))
+          ! if (.not. allocated(precip)) allocate(precip(n, m))
+          allocate(snow(n, m))
+          allocate(precip(n, m))
           if (.not. allocated(land_water_frac)) allocate(land_water_frac(n, m))
           if (.not. allocated(pixel_qual_flag)) allocate(pixel_qual_flag(n, m))
           
@@ -332,7 +335,32 @@ MODULE TOOLSUBS_AMSR
                 endif
              end do
           end do
-          
+
+        ALLOCATE(quality_flag(n,m))
+        quality_flag = 0
+        
+        write(LDT_logunit,*)'[INFO] Packing quality flags at footprint level'
+        
+        do j = 1, m
+           do i = 1, n
+              ! Bit 0: Ocean flag (land fraction < 20%)
+              if (land_water_frac(i,j) < 20) then
+                 quality_flag(i,j) = IOR(quality_flag(i,j), 1)
+              endif
+              
+              ! Bit 1: Precipitation flag 
+              if (precip(i,j) == 1) then
+                 quality_flag(i,j) = IOR(quality_flag(i,j), 2)  
+              endif
+              
+              ! Bit 2: Snow flag
+              if (snow(i,j) == 1) then
+                 quality_flag(i,j) = IOR(quality_flag(i,j), 4)
+              endif
+           end do
+        end do
+        write(LDT_logunit,*)'[INFO] Quality flags packed successfully'
+
           ! Clean up
           call h5fclose_f(file_id, hdferr)
           call h5close_f(hdferr)
@@ -1017,8 +1045,8 @@ MODULE TOOLSUBS_AMSR
               !if (allocated(scan_qual_flag)) deallocate(scan_qual_flag)
               if (allocated(pixel_qual_flag)) deallocate(pixel_qual_flag)
               if (allocated(land_water_frac)) deallocate(land_water_frac)
-              if (allocated(snow)) deallocate(snow)
-              if (allocated(precip)) deallocate(precip)
+              !if (allocated(snow)) deallocate(snow)
+              !if (allocated(precip)) deallocate(precip)
               m = 0
               n = 0
               ierr = 1

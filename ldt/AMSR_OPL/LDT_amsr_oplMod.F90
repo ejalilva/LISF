@@ -48,6 +48,7 @@ module LDT_amsr_oplMod
     integer              :: L1RresampWriteOpt, L1Rtype, AMSRfilelistSuffixNumber
     integer              :: ntimes,ngrid
     real, allocatable    :: ARFS_TB_10V(:,:), ARFS_TB_10H(:,:), ARFS_TB_18H(:,:), ARFS_TB_18V(:,:), ARFS_TB_23H(:,:), ARFS_TB_23V(:,:), ARFS_TB_36H(:,:), ARFS_TB_36V(:,:), ARFS_TB_89H(:,:), ARFS_TB_89V(:,:), ARFS_LAND_WATER_FRAC(:,:) 
+    integer*1, allocatable :: ARFS_QUALITY_FLAG(:,:)
     real                 :: SD_thold
     integer              :: num_ens ! Number of ensemble members in LIS USAF file.
     integer              :: num_tiles ! Total number of tiles in LIS USAF file.
@@ -276,7 +277,7 @@ contains
 
     if(AMSReOPL%L1RresampWriteOpt.eq.1) then
        AMSReOPL%L1Rresampledir_02 = trim(AMSReOPL%L1Rresampledir)//'/'//&
-                                    trim(yyyymmdd)//'/'//trim(hh)
+                                    trim(yyyymmdd)
 
        ierr = LDT_create_subdirs(len_trim(AMSReOPL%L1Rresampledir_02), &
           trim(AMSReOPL%L1Rresampledir_02))
@@ -323,6 +324,7 @@ contains
              allocate(AMSReOPL%ARFS_TB_89H(LDT_rc%lnc(n),LDT_rc%lnr(n)))
              allocate(AMSReOPL%ARFS_TB_89V(LDT_rc%lnc(n),LDT_rc%lnr(n)))
              allocate(AMSReOPL%ARFS_LAND_WATER_FRAC(LDT_rc%lnc(n),LDT_rc%lnr(n)))
+             allocate(AMSReOPL%ARFS_QUALITY_FLAG(LDT_rc%lnc(n),LDT_rc%lnr(n)))
              ! EMK...Process subset of fields.
              call AMSR_L1R_RESAMPLE(amsr_L1R_filename(i), & 
                   AMSReOPL%L1Rdir, Orbit, TIMEsec, rc)
@@ -341,7 +343,8 @@ contains
                 deallocate(AMSReOPL%ARFS_TB_36V)
                 deallocate(AMSReOPL%ARFS_TB_89H)
                 deallocate(AMSReOPL%ARFS_TB_89V)
-                deallocate(AMSReOPL%ARFS_LAND_WATER_FRAC)                
+                deallocate(AMSReOPL%ARFS_LAND_WATER_FRAC)  
+                deallocate(AMSReOPL%ARFS_QUALITY_FLAG)
              end if
           elseif(hhmmss(i) /= hhmmss(i+1)) then
              write (LDT_logunit,*) '[INFO] Resampling ', trim(amsr_L1R_filename(i))
@@ -356,6 +359,7 @@ contains
              allocate(AMSReOPL%ARFS_TB_89H(LDT_rc%lnc(n),LDT_rc%lnr(n)))
              allocate(AMSReOPL%ARFS_TB_89V(LDT_rc%lnc(n),LDT_rc%lnr(n)))
              allocate(AMSReOPL%ARFS_LAND_WATER_FRAC(LDT_rc%lnc(n),LDT_rc%lnr(n)))
+             allocate(AMSReOPL%ARFS_QUALITY_FLAG(LDT_rc%lnc(n),LDT_rc%lnr(n)))
              !EMK Process subset of fields.
              call AMSR_L1R_RESAMPLE(amsr_L1R_filename(i), &
                   AMSReOPL%L1Rdir, Orbit, TIMEsec, rc)
@@ -374,7 +378,8 @@ contains
                 deallocate(AMSReOPL%ARFS_TB_36V)
                 deallocate(AMSReOPL%ARFS_TB_89H)
                 deallocate(AMSReOPL%ARFS_TB_89V)
-                deallocate(AMSReOPL%ARFS_LAND_WATER_FRAC) 
+                deallocate(AMSReOPL%ARFS_LAND_WATER_FRAC)
+                deallocate(AMSReOPL%ARFS_QUALITY_FLAG)
              end if
           endif
 
@@ -522,6 +527,7 @@ contains
              if (allocated(AMSReOPL%ARFS_TB_89H))   deallocate(AMSReOPL%ARFS_TB_89H)
              if (allocated(AMSReOPL%ARFS_TB_89V))   deallocate(AMSReOPL%ARFS_TB_89V)
              if (allocated(AMSReOPL%ARFS_LAND_WATER_FRAC)) deallocate(AMSReOPL%ARFS_LAND_WATER_FRAC)
+             if (allocated(AMSReOPL%ARFS_QUALITY_FLAG)) deallocate(AMSReOPL%ARFS_QUALITY_FLAG)           
           endif
        enddo
     endif
