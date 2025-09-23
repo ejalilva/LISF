@@ -45,6 +45,7 @@
      INTEGER(4), PARAMETER :: qualitybit = 0
      REAL(8), PARAMETER :: RE_KM = 6371.228, search_radius = 20.0, PI = 3.141592653589793238, d2r = PI/180.0
      REAL(8)  :: gcdist, lat1, lon1, lat2, lon2
+     LOGICAL :: has_snow, has_precip
      REAL*8,DIMENSION(nrows_l1rtb) :: tim
      REAL*4,DIMENSION(nrows_l1rtb,ncols_l1rtb) :: tb_10h, tb_10v, tb_18h, tb_18v, tb_23h, tb_23v, tb_36h, tb_36v, tb_89h, tb_89v
      REAL*4,DIMENSION(nrows_l1rtb,ncols_l1rtb) :: lat_l1r, lon_l1r
@@ -68,6 +69,8 @@
      
      INTEGER*1,DIMENSION(2560,1920) :: arfs_quality_flag                     ! Output grid
      INTEGER,DIMENSION(2560,1920) :: snow_count, precip_count, ocean_count, total_count  ! Counters for majority vote
+     INTEGER,DIMENSION(2560,1920) :: excluded_snow_count, excluded_precip_count
+
 
      !ALLOCATE(zerodistflag(size(ref_lat),size(ref_lon)))
      ALLOCATE(zerodistflag(size(ref_lon),size(ref_lat)))
@@ -107,6 +110,8 @@
      precip_count = 0
      ocean_count = 0
      total_count = 0
+     excluded_snow_count = 0
+     excluded_precip_count = 0
 
     ! Boundary check and debugging prints
     write(LDT_logunit,*) '[DEBUG] array dimensions:'
@@ -114,168 +119,178 @@
     write(LDT_logunit,*) '   size(ref_lat), size(ref_lon) = ', size(ref_lat), size(ref_lon)
 
 
-     DO ii = 1,ncols_l1rtb
-           DO jj = 1,nrows_l1rtb
-                 ! Skip invalid coordinates
-                 if (lat_l1r(jj,ii) < -90.0 .or. lat_l1r(jj,ii) > 90.0 .or. &
-                     lon_l1r(jj,ii) < -180.0 .or. lon_l1r(jj,ii) > 180.0) then
-                     cycle
-                 endif
-                 ! FIND ARFS_GRID (r,c)
-                 c = MINLOC(ABS(lat_l1r(jj,ii)-ref_lat(:)),1) !Lat Direction
-                 r = MINLOC(ABS(lon_l1r(jj,ii)-ref_lon(:)),1) !Lon Direction
-                 
-                 ! Ensure r and c are valid indices
-                 if (r < 1 .or. r > size(ref_lon) .or. c < 1 .or. c > size(ref_lat)) then
-                     cycle  ! Skip this point
-                 endif
-                 
-                 rmin=r-5 ; IF (rmin < 1) rmin=1
-                 rmax=r+5 ; IF (rmax > size(ref_lon)) rmax=size(ref_lon)
-                 cmin=c-5 ; IF (cmin < 1) cmin=1
-                 cmax=c+5 ; IF (cmax > size(ref_lat)) cmax=size(ref_lat)
-                 ! start from here
-                 ! Check snow and precip flags - with bounds protection
-                IF (jj <= size(snow_flag,1) .and. ii <= size(snow_flag,2) .and. &
-                    jj <= size(precip_flag,1) .and. ii <= size(precip_flag,2)) THEN
-                 IF (IBITS (snow_flag(jj,ii),qualitybit,1) == 0 .AND. IBITS (precip_flag(jj,ii),qualitybit,1) == 0) THEN !USE Snow and Precip flag to filter the footprints
-                    k=0
-                    DO rr = rmin,rmax !Lon direction
-                       DO cc =cmin,cmax !Lat direction
-                          lat1 = DBLE (lat_l1r(jj,ii)*d2r)
-                          lon1 = DBLE (lon_l1r(jj,ii)*d2r)
-                          lat2 = DBLE (ref_lat(cc)*d2r)
-                          lon2 = DBLE (ref_lon(rr)*d2r)
-
-                          if(lat1.eq.lat2.and.lon1.eq.lon2) then
-                             gcdist = 0.
-                          else
-                             gcdist = RE_KM * DACOS ( DSIN (lat1) * DSIN (lat2) + DCOS (lat1) * DCOS (lat2) * DCOS (lon1-lon2) )
-                          endif
-
-                          IF (gcdist < search_radius) THEN !RESAMPLE ONLY WITHIN THE SEARCH RANGE
-                             total_count(rr,cc) = total_count(rr,cc) + 1
-                             IF (IBITS(quality_flag(jj,ii), 0, 1) == 1) ocean_count(rr,cc) = ocean_count(rr,cc) + 1
-                             IF (IBITS(quality_flag(jj,ii), 1, 1) == 1) precip_count(rr,cc) = precip_count(rr,cc) + 1  
-                             IF (IBITS(quality_flag(jj,ii), 2, 1) == 1) snow_count(rr,cc) = snow_count(rr,cc) + 1
-                             
-                             IF (gcdist < 0.0001D0) THEN !The TB is right on the grid center
-                                zerodistflag (rr,cc) = 1
-                                arfs_quality_flag(rr,cc) = quality_flag(jj,ii)
-                                
-                                IF ((ABS (tim(ii) - (-9999.0)).GT.1.0D-7)) THEN !DO IF NOT FILLVALUE(-9999)
-                                   arfs_tim(rr,cc) = tim(ii) ; arfs_wt_tim(rr,cc) = 1.0
-                                END IF
-                                IF ((ABS (tb_10h(jj,ii) - (-9999.0)).GT.1.0D-7)) THEN !DO IF NOT FILLVALUE(-9999)
-                                   arfs_tb_10h(rr,cc) = tb_10h(jj,ii) ; arfs_wt_tb10h(rr,cc) = 1.0
-                                   arfs_samplenumh(rr,cc)=1 !Sample number only calculate for tb_10h
-                                END IF
-                                IF ((ABS (tb_10v(jj,ii) - (-9999.0)).GT.1.0D-7)) THEN !DO IF NOT FILLVALUE(-9999)
-                                   arfs_tb_10v(rr,cc) = tb_10v(jj,ii) ; arfs_wt_tb10v(rr,cc) = 1.0
-                                   arfs_samplenumv(rr,cc)=1 !Sample number only calculate for tb_10v
-                                   k=k+1;                                
-                                END IF
-                                IF ((ABS (tb_18h(jj,ii) - (-9999.0)).GT.1.0D-7)) THEN !DO IF NOT FILLVALUE(-9999)
-                                   arfs_tb_18h(rr,cc) = tb_18h(jj,ii) ; arfs_wt_tb18h(rr,cc) = 1.0
-                                END IF
-                                IF ((ABS (tb_18v(jj,ii) - (-9999.0)).GT.1.0D-7)) THEN !DO IF NOT FILLVALUE(-9999)
-                                   arfs_tb_18v(rr,cc) = tb_18v(jj,ii) ; arfs_wt_tb18v(rr,cc) = 1.0
-                                END IF
-                                IF ((ABS (tb_23h(jj,ii) - (-9999.0)).GT.1.0D-7)) THEN !DO IF NOT FILLVALUE(-9999)
-                                   arfs_tb_23h(rr,cc) = tb_23h(jj,ii) ; arfs_wt_tb23h(rr,cc) = 1.0
-                                END IF
-                                IF ((ABS (tb_23v(jj,ii) - (-9999.0)).GT.1.0D-7)) THEN !DO IF NOT FILLVALUE(-9999)
-                                   arfs_tb_23v(rr,cc) = tb_23v(jj,ii) ; arfs_wt_tb23v(rr,cc) = 1.0
-                                END IF
-                                IF ((ABS (tb_36h(jj,ii) - (-9999.0)).GT.1.0D-7)) THEN !DO IF NOT FILLVALUE(-9999)
-                                   arfs_tb_36h(rr,cc) = tb_36h(jj,ii) ; arfs_wt_tb36h(rr,cc) = 1.0
-                                END IF
-                                IF ((ABS (tb_36v(jj,ii) - (-9999.0)).GT.1.0D-7)) THEN !DO IF NOT FILLVALUE(-9999)
-                                   arfs_tb_36v(rr,cc) = tb_36v(jj,ii) ; arfs_wt_tb36v(rr,cc) = 1.0
-                                END IF
-                                IF ((ABS (tb_89h(jj,ii) - (-9999.0)).GT.1.0D-7)) THEN !DO IF NOT FILLVALUE(-9999)
-                                   arfs_tb_89h(rr,cc) = tb_89h(jj,ii) ; arfs_wt_tb89h(rr,cc) = 1.0
-                                END IF
-                                IF ((ABS (tb_89v(jj,ii) - (-9999.0)).GT.1.0D-7)) THEN !DO IF NOT FILLVALUE(-9999)
-                                   arfs_tb_89v(rr,cc) = tb_89v(jj,ii) ; arfs_wt_tb89v(rr,cc) = 1.0
-                                END IF
-                                IF ((ABS (land_water_frac(jj,ii) - (-9999.0)).GT.1.0D-7)) THEN !DO IF NOT FILLVALUE(-9999)
-                                   arfs_land_water_frac(rr,cc) = land_water_frac(jj,ii) ; arfs_wt_land_water_frac(rr,cc) = 1.0
-                                END IF
-
-                                ! TODO: RFI_flag
-                                !IF ((ABS (rfi_flag(jj,ii) - (-9999.0)).GT.1.0D-7)) THEN !DO IF NOT FILLVALUE(-9999)
-                                   !arfs_rfi_flag(rr,cc) = rfi_flag(jj,ii) ; arfs_wt_rfi_flag(rr,cc) = 1.0
-                                !END IF
-                                
-                             ELSE ! 
-                                IF (zerodistflag (rr,cc).EQ.0) THEN
-
-                                   IF ((ABS (tim(ii) - (-9999.0)).GT.1.0D-7)) THEN !DO IF NOT FILLVALUE(-9999)
-                                      arfs_tim(rr,cc) = arfs_tim(rr,cc) + tim(ii) / SNGL (gcdist*gcdist)
-                                      arfs_wt_tim(rr,cc) = arfs_wt_tim(rr,cc) + 1.0 / SNGL (gcdist*gcdist)
-                                   END IF
-                                   IF ((ABS (tb_10v(jj,ii) - (-9999.0)).GT.1.0D-7)) THEN !DO IF NOT FILLVALUE(-9999)
-                                      arfs_tb_10v(rr,cc) = arfs_tb_10v(rr,cc) + tb_10v(jj,ii) / SNGL (gcdist*gcdist)
-                                      arfs_wt_tb10v(rr,cc) = arfs_wt_tb10v(rr,cc) + 1.0 / SNGL (gcdist*gcdist)
-                                      arfs_samplenumv(rr,cc)=arfs_samplenumv(rr,cc)+1.0 !Sample number only calculate for correct tb
-                                      k=k+1;                                   END IF
-                                   IF ((ABS (tb_10h(jj,ii) - (-9999.0)).GT.1.0D-7)) THEN !DO IF NOT FILLVALUE(-9999)
-                                      arfs_tb_10h(rr,cc) = arfs_tb_10h(rr,cc) + tb_10h(jj,ii) / SNGL (gcdist*gcdist)
-                                      arfs_wt_tb10h(rr,cc) = arfs_wt_tb10h(rr,cc) + 1.0 / SNGL (gcdist*gcdist)
-                                      arfs_samplenumh(rr,cc)=arfs_samplenumh(rr,cc)+1.0 !Sample number only calculate for correct tb
-                                   END IF
-                                   IF ((ABS (tb_18v(jj,ii) - (-9999.0)).GT.1.0D-7)) THEN !DO IF NOT FILLVALUE(-9999)
-                                      arfs_tb_18v(rr,cc) = arfs_tb_18v(rr,cc) + tb_18v(jj,ii) / SNGL (gcdist*gcdist)
-                                      arfs_wt_tb18v(rr,cc) = arfs_wt_tb18v(rr,cc) + 1.0 / SNGL (gcdist*gcdist)
-                                   END IF
-                                   IF ((ABS (tb_18h(jj,ii) - (-9999.0)).GT.1.0D-7)) THEN !DO IF NOT FILLVALUE(-9999)
-                                      arfs_tb_18h(rr,cc) = arfs_tb_18h(rr,cc) + tb_18h(jj,ii) / SNGL (gcdist*gcdist)
-                                      arfs_wt_tb18h(rr,cc) = arfs_wt_tb18h(rr,cc) + 1.0 / SNGL (gcdist*gcdist)
-                                   END IF
-                                   IF ((ABS (tb_23v(jj,ii) - (-9999.0)).GT.1.0D-7)) THEN !DO IF NOT FILLVALUE(-9999)
-                                      arfs_tb_23v(rr,cc) = arfs_tb_23v(rr,cc) + tb_23v(jj,ii) / SNGL (gcdist*gcdist)
-                                      arfs_wt_tb23v(rr,cc) = arfs_wt_tb23v(rr,cc) + 1.0 / SNGL (gcdist*gcdist)
-                                   END IF
-                                   IF ((ABS (tb_23h(jj,ii) - (-9999.0)).GT.1.0D-7)) THEN !DO IF NOT FILLVALUE(-9999)
-                                      arfs_tb_23h(rr,cc) = arfs_tb_23h(rr,cc) + tb_23h(jj,ii) / SNGL (gcdist*gcdist)
-                                      arfs_wt_tb23h(rr,cc) = arfs_wt_tb23h(rr,cc) + 1.0 / SNGL (gcdist*gcdist)
-                                   END IF
-                                   IF ((ABS (tb_36v(jj,ii) - (-9999.0)).GT.1.0D-7)) THEN !DO IF NOT FILLVALUE(-9999)
-                                      arfs_tb_36v(rr,cc) = arfs_tb_36v(rr,cc) + tb_36v(jj,ii) / SNGL (gcdist*gcdist)
-                                      arfs_wt_tb36v(rr,cc) = arfs_wt_tb36v(rr,cc) + 1.0 / SNGL (gcdist*gcdist)
-                                   END IF
-                                   IF ((ABS (tb_36h(jj,ii) - (-9999.0)).GT.1.0D-7)) THEN !DO IF NOT FILLVALUE(-9999)
-                                      arfs_tb_36h(rr,cc) = arfs_tb_36h(rr,cc) + tb_36h(jj,ii) / SNGL (gcdist*gcdist)
-                                      arfs_wt_tb36h(rr,cc) = arfs_wt_tb36h(rr,cc) + 1.0 / SNGL (gcdist*gcdist)
-                                   END IF
-                                   IF ((ABS (tb_89v(jj,ii) - (-9999.0)).GT.1.0D-7)) THEN !DO IF NOT FILLVALUE(-9999)
-                                      arfs_tb_89v(rr,cc) = arfs_tb_89v(rr,cc) + tb_89v(jj,ii) / SNGL (gcdist*gcdist)
-                                      arfs_wt_tb89v(rr,cc) = arfs_wt_tb89v(rr,cc) + 1.0 / SNGL (gcdist*gcdist)
-                                   END IF
-                                   IF ((ABS (tb_89h(jj,ii) - (-9999.0)).GT.1.0D-7)) THEN !DO IF NOT FILLVALUE(-9999)
-                                      arfs_tb_89h(rr,cc) = arfs_tb_89h(rr,cc) + tb_89h(jj,ii) / SNGL (gcdist*gcdist)
-                                      arfs_wt_tb89h(rr,cc) = arfs_wt_tb89h(rr,cc) + 1.0 / SNGL (gcdist*gcdist)
-                                   END IF
-                                   IF ((ABS (land_water_frac(jj,ii) - (-9999.0)).GT.1.0D-7)) THEN !DO IF NOT FILLVALUE(-9999)
-                                      arfs_land_water_frac(rr,cc) = arfs_land_water_frac(rr,cc) + land_water_frac(jj,ii) / SNGL (gcdist*gcdist)
-                                      arfs_wt_land_water_frac(rr,cc) = arfs_wt_land_water_frac(rr,cc) + 1.0 / SNGL (gcdist*gcdist)
-                                   END IF
-                                   
-                                   !IF ((ABS (rfi_flag(jj,ii) - (-9999.0)).GT.1.0D-7)) THEN !DO IF NOT FILLVALUE(-9999)
-                                      !arfs_rfi_flag(rr,cc) = arfs_rfi_flag(rr,cc) + rfi_flag(jj,ii) / SNGL (gcdist*gcdist)
-                                      !arfs_wt_rfi_flag(rr,cc) = arfs_wt_rfi_flag(rr,cc) + 1.0 / SNGL (gcdist*gcdist)
-                                   !END IF
-
-                                END IF !(zerodistflag (rr,cc) = 0)
-                             END IF !(gcdist < 0.0001D0)!
-                          END IF !(gcdist < search_radius)
-                       END DO !cc =cmin,cmax
-                    END DO !rr = rmin,rmax
-                    END IF
-                 END IF !(IBITS (snow_flag(jj,ii),qualitybit,1) == 0 .AND. IBITS (precip_flag(jj,jj),qualitybit,1) == 0)
-           END DO !jj=1,2
-     END DO !ii=1,2
+    DO ii = 1,ncols_l1rtb
+        DO jj = 1,nrows_l1rtb
+            ! Skip invalid coordinates
+            if (lat_l1r(jj,ii) < -90.0 .or. lat_l1r(jj,ii) > 90.0 .or. &
+                lon_l1r(jj,ii) < -180.0 .or. lon_l1r(jj,ii) > 180.0) then
+                cycle
+            endif
+            
+            ! FIND ARFS_GRID (r,c)
+            c = MINLOC(ABS(lat_l1r(jj,ii)-ref_lat(:)),1) !Lat Direction
+            r = MINLOC(ABS(lon_l1r(jj,ii)-ref_lon(:)),1) !Lon Direction
+            
+            ! Ensure r and c are valid indices
+            if (r < 1 .or. r > size(ref_lon) .or. c < 1 .or. c > size(ref_lat)) then
+                cycle  ! Skip this point
+            endif
+            
+            rmin=r-5 ; IF (rmin < 1) rmin=1
+            rmax=r+5 ; IF (rmax > size(ref_lon)) rmax=size(ref_lon)
+            cmin=c-5 ; IF (cmin < 1) cmin=1
+            cmax=c+5 ; IF (cmax > size(ref_lat)) cmax=size(ref_lat)
+            
+            ! Check snow and precip flags - with bounds protection
+            IF (jj <= size(snow_flag,1) .and. ii <= size(snow_flag,2) .and. &
+                jj <= size(precip_flag,1) .and. ii <= size(precip_flag,2)) THEN
+                
+                ! Determine if this footprint has snow or precip
+                has_snow = (IBITS(snow_flag(jj,ii),qualitybit,1) == 1)
+                has_precip = (IBITS(precip_flag(jj,ii),qualitybit,1) == 1)
+                
+                k=0
+                DO rr = rmin,rmax !Lon direction
+                    DO cc = cmin,cmax !Lat direction
+                        lat1 = DBLE(lat_l1r(jj,ii)*d2r)
+                        lon1 = DBLE(lon_l1r(jj,ii)*d2r)
+                        lat2 = DBLE(ref_lat(cc)*d2r)
+                        lon2 = DBLE(ref_lon(rr)*d2r)
+                        
+                        if(lat1.eq.lat2.and.lon1.eq.lon2) then
+                            gcdist = 0.
+                        else
+                            gcdist = RE_KM * DACOS(DSIN(lat1) * DSIN(lat2) + DCOS(lat1) * DCOS(lat2) * DCOS(lon1-lon2))
+                        endif
+                        
+                        IF (gcdist < search_radius) THEN !RESAMPLE ONLY WITHIN THE SEARCH RANGE
+                            ! Always update counts for quality flag tracking (for ALL footprints)
+                            total_count(rr,cc) = total_count(rr,cc) + 1
+                            IF (IBITS(quality_flag(jj,ii), 0, 1) == 1) ocean_count(rr,cc) = ocean_count(rr,cc) + 1
+                            IF (IBITS(quality_flag(jj,ii), 1, 1) == 1) precip_count(rr,cc) = precip_count(rr,cc) + 1  
+                            IF (IBITS(quality_flag(jj,ii), 2, 1) == 1) snow_count(rr,cc) = snow_count(rr,cc) + 1
+                            
+                            ! Check if this footprint should be excluded
+                            IF (has_snow .OR. has_precip) THEN
+                                ! This footprint will be excluded from resampling
+                                ! Just track that it was excluded (counts already updated above)
+                                IF (has_snow) excluded_snow_count(rr,cc) = excluded_snow_count(rr,cc) + 1
+                                IF (has_precip) excluded_precip_count(rr,cc) = excluded_precip_count(rr,cc) + 1
+                            ELSE
+                                ! No snow/precip - proceed with actual resampling
+                                IF (gcdist < 0.0001D0) THEN !The TB is right on the grid center
+                                    zerodistflag(rr,cc) = 1
+                                    arfs_quality_flag(rr,cc) = quality_flag(jj,ii)
+                                    
+                                    IF ((ABS(tim(ii) - (-9999.0)).GT.1.0E-6)) THEN
+                                        arfs_tim(rr,cc) = tim(ii)
+                                        arfs_wt_tim(rr,cc) = 1.0
+                                    ENDIF
+                                    IF ((ABS(tb_10h(jj,ii) - (-9999.0)).GT.1.0E-6)) THEN
+                                        arfs_tb_10h(rr,cc) = tb_10h(jj,ii)
+                                        arfs_wt_tb10h(rr,cc) = 1.0
+                                    ENDIF
+                                    IF ((ABS(tb_10v(jj,ii) - (-9999.0)).GT.1.0E-6)) THEN
+                                        arfs_tb_10v(rr,cc) = tb_10v(jj,ii)
+                                        arfs_wt_tb10v(rr,cc) = 1.0
+                                    ENDIF
+                                    IF ((ABS(tb_18h(jj,ii) - (-9999.0)).GT.1.0E-6)) THEN
+                                        arfs_tb_18h(rr,cc) = tb_18h(jj,ii)
+                                        arfs_wt_tb18h(rr,cc) = 1.0
+                                    ENDIF
+                                    IF ((ABS(tb_18v(jj,ii) - (-9999.0)).GT.1.0E-6)) THEN
+                                        arfs_tb_18v(rr,cc) = tb_18v(jj,ii)
+                                        arfs_wt_tb18v(rr,cc) = 1.0
+                                    ENDIF
+                                    IF ((ABS(tb_23h(jj,ii) - (-9999.0)).GT.1.0E-6)) THEN
+                                        arfs_tb_23h(rr,cc) = tb_23h(jj,ii)
+                                        arfs_wt_tb23h(rr,cc) = 1.0
+                                    ENDIF
+                                    IF ((ABS(tb_23v(jj,ii) - (-9999.0)).GT.1.0E-6)) THEN
+                                        arfs_tb_23v(rr,cc) = tb_23v(jj,ii)
+                                        arfs_wt_tb23v(rr,cc) = 1.0
+                                    ENDIF
+                                    IF ((ABS(tb_36h(jj,ii) - (-9999.0)).GT.1.0E-6)) THEN
+                                        arfs_tb_36h(rr,cc) = tb_36h(jj,ii)
+                                        arfs_wt_tb36h(rr,cc) = 1.0
+                                    ENDIF
+                                    IF ((ABS(tb_36v(jj,ii) - (-9999.0)).GT.1.0E-6)) THEN
+                                        arfs_tb_36v(rr,cc) = tb_36v(jj,ii)
+                                        arfs_wt_tb36v(rr,cc) = 1.0
+                                    ENDIF
+                                    IF ((ABS(tb_89h(jj,ii) - (-9999.0)).GT.1.0E-6)) THEN
+                                        arfs_tb_89h(rr,cc) = tb_89h(jj,ii)
+                                        arfs_wt_tb89h(rr,cc) = 1.0
+                                    ENDIF
+                                    IF ((ABS(tb_89v(jj,ii) - (-9999.0)).GT.1.0E-6)) THEN
+                                        arfs_tb_89v(rr,cc) = tb_89v(jj,ii)
+                                        arfs_wt_tb89v(rr,cc) = 1.0
+                                    ENDIF
+                                    IF ((ABS(land_water_frac(jj,ii) - (-9999.0)).GT.1.0E-6)) THEN
+                                        arfs_land_water_frac(rr,cc) = land_water_frac(jj,ii)
+                                        arfs_wt_land_water_frac(rr,cc) = 1.0
+                                    ENDIF
+                                ELSE
+                                    ! Weighted resampling (distance > 0)
+                                    IF (zerodistflag(rr,cc).NE.1) THEN !Grid locations with an exact match are not updated
+                                        k=k+1
+                                        IF ((ABS(tim(ii) - (-9999.0)).GT.1.0E-6)) THEN
+                                            arfs_tim(rr,cc) = arfs_tim(rr,cc) + tim(ii) * (1.0D0/gcdist)
+                                            arfs_wt_tim(rr,cc) = arfs_wt_tim(rr,cc) + (1.0/gcdist)
+                                        ENDIF
+                                        IF ((ABS(tb_10h(jj,ii) - (-9999.0)).GT.1.0E-6)) THEN
+                                            arfs_tb_10h(rr,cc) = arfs_tb_10h(rr,cc) + tb_10h(jj,ii) * (1.0/gcdist)
+                                            arfs_wt_tb10h(rr,cc) = arfs_wt_tb10h(rr,cc) + (1.0/gcdist)
+                                        ENDIF
+                                        IF ((ABS(tb_10v(jj,ii) - (-9999.0)).GT.1.0E-6)) THEN
+                                            arfs_tb_10v(rr,cc) = arfs_tb_10v(rr,cc) + tb_10v(jj,ii) * (1.0/gcdist)
+                                            arfs_wt_tb10v(rr,cc) = arfs_wt_tb10v(rr,cc) + (1.0/gcdist)
+                                        ENDIF
+                                        IF ((ABS(tb_18h(jj,ii) - (-9999.0)).GT.1.0E-6)) THEN
+                                            arfs_tb_18h(rr,cc) = arfs_tb_18h(rr,cc) + tb_18h(jj,ii) * (1.0/gcdist)
+                                            arfs_wt_tb18h(rr,cc) = arfs_wt_tb18h(rr,cc) + (1.0/gcdist)
+                                        ENDIF
+                                        IF ((ABS(tb_18v(jj,ii) - (-9999.0)).GT.1.0E-6)) THEN
+                                            arfs_tb_18v(rr,cc) = arfs_tb_18v(rr,cc) + tb_18v(jj,ii) * (1.0/gcdist)
+                                            arfs_wt_tb18v(rr,cc) = arfs_wt_tb18v(rr,cc) + (1.0/gcdist)
+                                        ENDIF
+                                        IF ((ABS(tb_23h(jj,ii) - (-9999.0)).GT.1.0E-6)) THEN
+                                            arfs_tb_23h(rr,cc) = arfs_tb_23h(rr,cc) + tb_23h(jj,ii) * (1.0/gcdist)
+                                            arfs_wt_tb23h(rr,cc) = arfs_wt_tb23h(rr,cc) + (1.0/gcdist)
+                                        ENDIF
+                                        IF ((ABS(tb_23v(jj,ii) - (-9999.0)).GT.1.0E-6)) THEN
+                                            arfs_tb_23v(rr,cc) = arfs_tb_23v(rr,cc) + tb_23v(jj,ii) * (1.0/gcdist)
+                                            arfs_wt_tb23v(rr,cc) = arfs_wt_tb23v(rr,cc) + (1.0/gcdist)
+                                        ENDIF
+                                        IF ((ABS(tb_36h(jj,ii) - (-9999.0)).GT.1.0E-6)) THEN
+                                            arfs_tb_36h(rr,cc) = arfs_tb_36h(rr,cc) + tb_36h(jj,ii) * (1.0/gcdist)
+                                            arfs_wt_tb36h(rr,cc) = arfs_wt_tb36h(rr,cc) + (1.0/gcdist)
+                                        ENDIF
+                                        IF ((ABS(tb_36v(jj,ii) - (-9999.0)).GT.1.0E-6)) THEN
+                                            arfs_tb_36v(rr,cc) = arfs_tb_36v(rr,cc) + tb_36v(jj,ii) * (1.0/gcdist)
+                                            arfs_wt_tb36v(rr,cc) = arfs_wt_tb36v(rr,cc) + (1.0/gcdist)
+                                        ENDIF
+                                        IF ((ABS(tb_89h(jj,ii) - (-9999.0)).GT.1.0E-6)) THEN
+                                            arfs_tb_89h(rr,cc) = arfs_tb_89h(rr,cc) + tb_89h(jj,ii) * (1.0/gcdist)
+                                            arfs_wt_tb89h(rr,cc) = arfs_wt_tb89h(rr,cc) + (1.0/gcdist)
+                                        ENDIF
+                                        IF ((ABS(tb_89v(jj,ii) - (-9999.0)).GT.1.0E-6)) THEN
+                                            arfs_tb_89v(rr,cc) = arfs_tb_89v(rr,cc) + tb_89v(jj,ii) * (1.0/gcdist)
+                                            arfs_wt_tb89v(rr,cc) = arfs_wt_tb89v(rr,cc) + (1.0/gcdist)
+                                        ENDIF
+                                        IF ((ABS(land_water_frac(jj,ii) - (-9999.0)).GT.1.0E-6)) THEN
+                                            arfs_land_water_frac(rr,cc) = arfs_land_water_frac(rr,cc) + land_water_frac(jj,ii) * (1.0/gcdist)
+                                            arfs_wt_land_water_frac(rr,cc) = arfs_wt_land_water_frac(rr,cc) + (1.0/gcdist)
+                                        ENDIF
+                                    ENDIF !zerodistflag check
+                                ENDIF !(gcdist < 0.0001D0)
+                            ENDIF !(has_snow .OR. has_precip)
+                        ENDIF !(gcdist < search_radius)
+                    END DO !cc = cmin,cmax
+                END DO !rr = rmin,rmax
+            ENDIF !(bounds check for snow_flag and precip_flag)
+        END DO !jj=1,nrows_l1rtb
+    END DO !ii=1,ncols_l1rtb
 
      ! TODO add a seperate for loop for the rfi_flag to loop trough lat89 and lon89 already defined in the variable defenition section but commented
 
@@ -314,20 +329,26 @@
         arfs_tb_89v= arfs_tb_89v / arfs_wt_tb89v
      END WHERE
 
-     ! Finalize quality flags using majority vote (only where no exact match occurred)
+    ! Finalize quality flags using majority vote (only where no exact match occurred)
     DO i = 1, 2560
        DO j = 1, 1920
-          ! Only apply majority vote if no exact match was found (arfs_quality_flag still 0)
-          IF (arfs_quality_flag(i,j) == 0 .AND. total_count(i,j) > 0) THEN
-             ! Set flags based on majority (>50%)
-             IF (ocean_count(i,j) > total_count(i,j)/2) THEN
-                arfs_quality_flag(i,j) = IOR(arfs_quality_flag(i,j), 1)
-             END IF
-             IF (precip_count(i,j) > total_count(i,j)/2) THEN
-                arfs_quality_flag(i,j) = IOR(arfs_quality_flag(i,j), 2)
-             END IF
-             IF (snow_count(i,j) > total_count(i,j)/2) THEN
-                arfs_quality_flag(i,j) = IOR(arfs_quality_flag(i,j), 4)
+          IF (arfs_quality_flag(i,j) == 0) THEN
+             ! Total footprints now already includes everything
+             IF (total_count(i,j) > 0) THEN
+                ! Ocean flag
+                IF (ocean_count(i,j) > total_count(i,j)/2) THEN
+                   arfs_quality_flag(i,j) = IOR(arfs_quality_flag(i,j), 1)
+                END IF
+                
+                ! Precipitation flag - note: excluded counts already in precip_count
+                IF (precip_count(i,j) > total_count(i,j)/2) THEN
+                   arfs_quality_flag(i,j) = IOR(arfs_quality_flag(i,j), 2)
+                END IF
+                
+                ! Snow flag - note: excluded counts already in snow_count
+                IF (snow_count(i,j) > total_count(i,j)/2) THEN
+                   arfs_quality_flag(i,j) = IOR(arfs_quality_flag(i,j), 4)
+                END IF
              END IF
           END IF
        END DO
