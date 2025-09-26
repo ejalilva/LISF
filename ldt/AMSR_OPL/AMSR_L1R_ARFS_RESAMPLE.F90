@@ -263,7 +263,7 @@ subroutine AMSR_L1R_RESAMPLE(AMSRFILE,L1R_dir,Orbit,ARFS_TIME,rc)
             [lon_dimid, lat_dimid], qf_varid), &
             '[ERR] nf90_def_var failed for QUALITY_FLAG')
        
-       ! Add variable attributes
+        ! Add variable attributes for coordinate variables
        call LDT_verify(nf90_put_att(ncid, time_varid, 'units', 'seconds since 1970-01-01T00:00:00Z'), &
             '[ERR] nf90_put_att failed for time units')
        call LDT_verify(nf90_put_att(ncid, time_varid, 'standard_name', 'time'), &
@@ -272,20 +272,102 @@ subroutine AMSR_L1R_RESAMPLE(AMSRFILE,L1R_dir,Orbit,ARFS_TIME,rc)
             '[ERR] nf90_put_att failed for time calendar')
        call LDT_verify(nf90_put_att(ncid, lat_varid, 'units', 'degrees_north'), &
             '[ERR] nf90_put_att failed for lat units')
+       call LDT_verify(nf90_put_att(ncid, lat_varid, 'standard_name', 'latitude'), &
+            '[ERR] nf90_put_att failed for lat standard_name')
        call LDT_verify(nf90_put_att(ncid, lon_varid, 'units', 'degrees_east'), &
             '[ERR] nf90_put_att failed for lon units')
+       call LDT_verify(nf90_put_att(ncid, lon_varid, 'standard_name', 'longitude'), &
+            '[ERR] nf90_put_att failed for lon standard_name')
        
+       ! TB_10H attributes with fill value
        call LDT_verify(nf90_put_att(ncid, tb_10h_varid, 'units', 'K'), &
             '[ERR] nf90_put_att failed for TB_10H units')
        call LDT_verify(nf90_put_att(ncid, tb_10h_varid, 'long_name', 'Brightness Temperature 10.65 GHz H-pol'), &
             '[ERR] nf90_put_att failed for TB_10H long_name')
-       ! Add similar attributes for other TB variables...
+       call LDT_verify(nf90_put_att(ncid, tb_10h_varid, '_FillValue', -9999.0), &
+            '[ERR] nf90_put_att failed for TB_10H _FillValue')
        
+       ! TB_10V attributes with fill value
+       call LDT_verify(nf90_put_att(ncid, tb_10v_varid, 'units', 'K'), &
+            '[ERR] nf90_put_att failed for TB_10V units')
+       call LDT_verify(nf90_put_att(ncid, tb_10v_varid, 'long_name', 'Brightness Temperature 10.65 GHz V-pol'), &
+            '[ERR] nf90_put_att failed for TB_10V long_name')
+       call LDT_verify(nf90_put_att(ncid, tb_10v_varid, '_FillValue', -9999.0), &
+            '[ERR] nf90_put_att failed for TB_10V _FillValue')
+       
+       ! TB_18H attributes with fill value
+       call LDT_verify(nf90_put_att(ncid, tb_18h_varid, 'units', 'K'), &
+            '[ERR] nf90_put_att failed for TB_18H units')
+       call LDT_verify(nf90_put_att(ncid, tb_18h_varid, 'long_name', 'Brightness Temperature 18.7 GHz H-pol'), &
+            '[ERR] nf90_put_att failed for TB_18H long_name')
+       call LDT_verify(nf90_put_att(ncid, tb_18h_varid, '_FillValue', -9999.0), &
+            '[ERR] nf90_put_att failed for TB_18H _FillValue')
+       
+       ! TB_18V attributes with fill value
+       call LDT_verify(nf90_put_att(ncid, tb_18v_varid, 'units', 'K'), &
+            '[ERR] nf90_put_att failed for TB_18V units')
+       call LDT_verify(nf90_put_att(ncid, tb_18v_varid, 'long_name', 'Brightness Temperature 18.7 GHz V-pol'), &
+            '[ERR] nf90_put_att failed for TB_18V long_name')
+       call LDT_verify(nf90_put_att(ncid, tb_18v_varid, '_FillValue', -9999.0), &
+            '[ERR] nf90_put_att failed for TB_18V _FillValue')
+       
+       ! TB_23H attributes with fill value
+       call LDT_verify(nf90_put_att(ncid, tb_23h_varid, 'units', 'K'), &
+            '[ERR] nf90_put_att failed for TB_23H units')
+       call LDT_verify(nf90_put_att(ncid, tb_23h_varid, 'long_name', 'Brightness Temperature 23.8 GHz H-pol'), &
+            '[ERR] nf90_put_att failed for TB_23H long_name')
+       call LDT_verify(nf90_put_att(ncid, tb_23h_varid, '_FillValue', -9999.0), &
+            '[ERR] nf90_put_att failed for TB_23H _FillValue')
+       
+       ! TB_23V attributes with fill value
+       call LDT_verify(nf90_put_att(ncid, tb_23v_varid, 'units', 'K'), &
+            '[ERR] nf90_put_att failed for TB_23V units')
+       call LDT_verify(nf90_put_att(ncid, tb_23v_varid, 'long_name', 'Brightness Temperature 23.8 GHz V-pol'), &
+            '[ERR] nf90_put_att failed for TB_23V long_name')
+       call LDT_verify(nf90_put_att(ncid, tb_23v_varid, '_FillValue', -9999.0), &
+            '[ERR] nf90_put_att failed for TB_23V _FillValue')
+       
+       ! TB_36H attributes with fill value
+       call LDT_verify(nf90_put_att(ncid, tb_36h_varid, 'units', 'K'), &
+            '[ERR] nf90_put_att failed for TB_36H units')
+       call LDT_verify(nf90_put_att(ncid, tb_36h_varid, 'long_name', 'Brightness Temperature 36.5 GHz H-pol'), &
+            '[ERR] nf90_put_att failed for TB_36H long_name')
+       call LDT_verify(nf90_put_att(ncid, tb_36h_varid, '_FillValue', -9999.0), &
+            '[ERR] nf90_put_att failed for TB_36H _FillValue')
+       
+       ! TB_36V attributes with fill value
+       call LDT_verify(nf90_put_att(ncid, tb_36v_varid, 'units', 'K'), &
+            '[ERR] nf90_put_att failed for TB_36V units')
+       call LDT_verify(nf90_put_att(ncid, tb_36v_varid, 'long_name', 'Brightness Temperature 36.5 GHz V-pol'), &
+            '[ERR] nf90_put_att failed for TB_36V long_name')
+       call LDT_verify(nf90_put_att(ncid, tb_36v_varid, '_FillValue', -9999.0), &
+            '[ERR] nf90_put_att failed for TB_36V _FillValue')
+       
+       ! TB_89H attributes with fill value
+       call LDT_verify(nf90_put_att(ncid, tb_89h_varid, 'units', 'K'), &
+            '[ERR] nf90_put_att failed for TB_89H units')
+       call LDT_verify(nf90_put_att(ncid, tb_89h_varid, 'long_name', 'Brightness Temperature 89.0 GHz H-pol'), &
+            '[ERR] nf90_put_att failed for TB_89H long_name')
+       call LDT_verify(nf90_put_att(ncid, tb_89h_varid, '_FillValue', -9999.0), &
+            '[ERR] nf90_put_att failed for TB_89H _FillValue')
+       
+       ! TB_89V attributes with fill value
+       call LDT_verify(nf90_put_att(ncid, tb_89v_varid, 'units', 'K'), &
+            '[ERR] nf90_put_att failed for TB_89V units')
+       call LDT_verify(nf90_put_att(ncid, tb_89v_varid, 'long_name', 'Brightness Temperature 89.0 GHz V-pol'), &
+            '[ERR] nf90_put_att failed for TB_89V long_name')
+       call LDT_verify(nf90_put_att(ncid, tb_89v_varid, '_FillValue', -9999.0), &
+            '[ERR] nf90_put_att failed for TB_89V _FillValue')
+
+       ! LAND_WATER_FRAC attributes with fill value
        call LDT_verify(nf90_put_att(ncid, lwf_varid, 'units', 'fraction'), &
             '[ERR] nf90_put_att failed for LAND_WATER_FRAC units')
        call LDT_verify(nf90_put_att(ncid, lwf_varid, 'long_name', 'Land Water Fraction'), &
             '[ERR] nf90_put_att failed for LAND_WATER_FRAC long_name')
+       call LDT_verify(nf90_put_att(ncid, lwf_varid, '_FillValue', -9999.0), &
+            '[ERR] nf90_put_att failed for LAND_WATER_FRAC _FillValue')
 
+       ! QUALITY_FLAG attributes
        call LDT_verify(nf90_put_att(ncid, qf_varid, 'units', 'dimensionless'), &
             '[ERR] nf90_put_att failed for QUALITY_FLAG units')
        call LDT_verify(nf90_put_att(ncid, qf_varid, 'long_name', &
@@ -296,11 +378,18 @@ subroutine AMSR_L1R_RESAMPLE(AMSRFILE,L1R_dir,Orbit,ARFS_TIME,rc)
             '[ERR] nf90_put_att failed for QUALITY_FLAG flag_meanings')
        call LDT_verify(nf90_put_att(ncid, qf_varid, 'flag_masks', [1, 2, 4]), &
             '[ERR] nf90_put_att failed for QUALITY_FLAG flag_masks')
+       call LDT_verify(nf90_put_att(ncid, qf_varid, '_FillValue', int(-128, kind=1)), &
+            '[ERR] nf90_put_att failed for QUALITY_FLAG _FillValue')
             
        ! Add global attributes
+       call LDT_verify(nf90_put_att(ncid, NF90_GLOBAL, 'Conventions', 'CF-1.10'), &
+            '[ERR] nf90_put_att failed for Conventions')
        call LDT_verify(nf90_put_att(ncid, NF90_GLOBAL, 'title', &
             'AMSR L1R Resampled to ARFS Grid'), &
             '[ERR] nf90_put_att failed for title')
+       call LDT_verify(nf90_put_att(ncid, NF90_GLOBAL, 'institution', &
+            'NASA GSFC Hydrological Sciences Laboratory'), &
+            '[ERR] nf90_put_att failed for institution')
        call LDT_verify(nf90_put_att(ncid, NF90_GLOBAL, 'source_file', &
             trim(AMSRFILE)), '[ERR] nf90_put_att failed for source_file')
        
