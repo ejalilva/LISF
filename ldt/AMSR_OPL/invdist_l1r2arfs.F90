@@ -76,19 +76,19 @@
      ALLOCATE(zerodistflag(size(ref_lon),size(ref_lat)))
      zerodistflag = 0 ! E.J
      
-     !INITIAL THE OUTPUT VARIABLES
-     arfs_tim=0.0
-     arfs_tb_10h=0.0
-     arfs_tb_10v=0.0
-     arfs_tb_18h=0.0
-     arfs_tb_18v=0.0
-     arfs_tb_23h=0.0
-     arfs_tb_23v=0.0
-     arfs_tb_36h=0.0
-     arfs_tb_36v=0.0
-     arfs_tb_89h=0.0
-     arfs_tb_89v=0.0
-     arfs_land_water_frac=0.0 
+     !INITIAL THE OUTPUT VARIABLES WITH FILL VALUE
+    arfs_tim=0.0
+    arfs_tb_10h=0.0
+    arfs_tb_10v=0.0
+    arfs_tb_18h=0.0
+    arfs_tb_18v=0.0
+    arfs_tb_23h=0.0
+    arfs_tb_23v=0.0
+    arfs_tb_36h=0.0
+    arfs_tb_36v=0.0
+    arfs_tb_89h=0.0
+    arfs_tb_89v=0.0
+    arfs_land_water_frac=0.0
      !arfs_rfi_flag=0 ! uncomment for RFI_flag
      
      arfs_wt_tim=0.0
@@ -294,39 +294,77 @@
 
      ! TODO add a seperate for loop for the rfi_flag to loop trough lat89 and lon89 already defined in the variable defenition section but commented
 
-     !APPLY WEIGHTING FUNCTION FOR RESAMPLING
+    !APPLY WEIGHTING FUNCTION FOR RESAMPLING AND SET FILL VALUES
      WHERE(arfs_tim.NE.0.0 .AND. arfs_wt_tim.NE.0.0)
         arfs_tim = arfs_tim / arfs_wt_tim
+     ELSEWHERE
+        arfs_tim = -9999.0
      END WHERE
+     
      WHERE(arfs_tb_10h.NE.0.0 .AND.arfs_wt_tb10h.NE.0.0)
         arfs_tb_10h= arfs_tb_10h / arfs_wt_tb10h
+     ELSEWHERE
+        arfs_tb_10h = -9999.0
      END WHERE
+     
      WHERE(arfs_tb_10v.NE.0.0 .AND.arfs_wt_tb10v.NE.0.0)
         arfs_tb_10v= arfs_tb_10v / arfs_wt_tb10v
+     ELSEWHERE
+        arfs_tb_10v = -9999.0
      END WHERE
+     
      WHERE(arfs_tb_18h.NE.0.0 .AND.arfs_wt_tb18h.NE.0.0)
         arfs_tb_18h= arfs_tb_18h / arfs_wt_tb18h
+     ELSEWHERE
+        arfs_tb_18h = -9999.0
      END WHERE
+     
      WHERE(arfs_tb_18v.NE.0.0 .AND.arfs_wt_tb18v.NE.0.0)
         arfs_tb_18v= arfs_tb_18v / arfs_wt_tb18v
+     ELSEWHERE
+        arfs_tb_18v = -9999.0
      END WHERE
+     
      WHERE(arfs_tb_23h.NE.0.0 .AND.arfs_wt_tb23h.NE.0.0)
         arfs_tb_23h= arfs_tb_23h / arfs_wt_tb23h
+     ELSEWHERE
+        arfs_tb_23h = -9999.0
      END WHERE
+     
      WHERE(arfs_tb_23v.NE.0.0 .AND.arfs_wt_tb23v.NE.0.0)
         arfs_tb_23v= arfs_tb_23v / arfs_wt_tb23v
+     ELSEWHERE
+        arfs_tb_23v = -9999.0
      END WHERE
+     
      WHERE(arfs_tb_36h.NE.0.0 .AND.arfs_wt_tb36h.NE.0.0)
         arfs_tb_36h= arfs_tb_36h / arfs_wt_tb36h
+     ELSEWHERE
+        arfs_tb_36h = -9999.0
      END WHERE
+     
      WHERE(arfs_tb_36v.NE.0.0 .AND.arfs_wt_tb36v.NE.0.0)
         arfs_tb_36v= arfs_tb_36v / arfs_wt_tb36v
+     ELSEWHERE
+        arfs_tb_36v = -9999.0
      END WHERE
+     
      WHERE(arfs_tb_89h.NE.0.0 .AND.arfs_wt_tb89h.NE.0.0)
         arfs_tb_89h= arfs_tb_89h / arfs_wt_tb89h
+     ELSEWHERE
+        arfs_tb_89h = -9999.0
      END WHERE
+     
      WHERE(arfs_tb_89v.NE.0.0 .AND.arfs_wt_tb89v.NE.0.0)
         arfs_tb_89v= arfs_tb_89v / arfs_wt_tb89v
+     ELSEWHERE
+        arfs_tb_89v = -9999.0
+     END WHERE
+
+     WHERE(arfs_land_water_frac.NE.0.0 .AND.arfs_wt_land_water_frac.NE.0.0)
+        arfs_land_water_frac = arfs_land_water_frac / arfs_wt_land_water_frac
+     ELSEWHERE
+        arfs_land_water_frac = -9999.0
      END WHERE
 
     ! Finalize quality flags using majority vote (only where no exact match occurred)
@@ -353,10 +391,7 @@
           END IF
        END DO
     END DO
-    
-     WHERE(arfs_land_water_frac.NE.0.0 .AND.arfs_wt_land_water_frac.NE.0.0)
-        arfs_land_water_frac = arfs_land_water_frac / arfs_wt_land_water_frac
-     END WHERE
+
      !WHERE(arfs_rfi_flag.NE.0.0 .AND.arfs_wt_rfi_flag.NE.0.0)
         !arfs_rfi_flag = arfs_rfi_flag / arfs_wt_rfi_flag
      !END WHERE
