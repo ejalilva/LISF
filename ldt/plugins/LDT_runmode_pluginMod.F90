@@ -96,6 +96,9 @@ contains
 
     external LDT_init_amsr_opl     !E.J
     external LDT_run_amsr_opl      !E.J
+
+    external LDT_init_wsf_opl     !E.J
+    external LDT_run_wsf_opl      !E.J
     
   ! Parameter Preprocessing:
     call registerldtinit(trim(LDT_LSMparamprocId)//char(0), &
@@ -192,6 +195,13 @@ contains
          LDT_init_amsr_opl)
     call registerldtrun(trim(LDT_AMSR_OPLId)//char(0), &
          LDT_run_amsr_opl)
+  
+  ! OPL WSF brightness temperature resampling (E.J)
+    call registerldtinit(trim(LDT_WSF_OPLId)//char(0), &
+         LDT_init_wsf_opl)
+    call registerldtrun(trim(LDT_WSF_OPLId)//char(0), &
+         LDT_run_wsf_opl)
+         
   end subroutine LDT_runmode_plugin
 
 end module LDT_runmode_pluginMod
