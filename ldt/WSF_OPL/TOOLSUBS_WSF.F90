@@ -57,6 +57,8 @@ CONTAINS
     real*4, allocatable :: chan_freq(:)
     character*1, allocatable :: chan_pol(:)
     integer*1, allocatable :: qf_from_file(:,:,:)
+    integer :: sensor_bit_count(5)
+
     
     ierr = 0
     nscans = 0
@@ -304,7 +306,7 @@ CONTAINS
             write(LDT_logunit,*)'[INFO] ✓ Found TB_89V at channel ', ichan
         end if
     end do
-    
+
     write(LDT_logunit,*)'[INFO] ========================================='
     write(LDT_logunit,*)'[INFO] Creating quality flags...'
     
@@ -384,6 +386,29 @@ CONTAINS
                 endif
             endif
         end do
+    end do
+    
+    sensor_bit_count = 0
+    do j = 1, nfovs
+        do i = 1, nscans
+            if (IBITS(quality_flag(j,i), 3, 1) == 1) sensor_bit_count(1) = sensor_bit_count(1) + 1
+            if (IBITS(quality_flag(j,i), 4, 1) == 1) sensor_bit_count(2) = sensor_bit_count(2) + 1
+            if (IBITS(quality_flag(j,i), 5, 1) == 1) sensor_bit_count(3) = sensor_bit_count(3) + 1
+            if (IBITS(quality_flag(j,i), 6, 1) == 1) sensor_bit_count(4) = sensor_bit_count(4) + 1
+            if (IBITS(quality_flag(j,i), 7, 1) == 1) sensor_bit_count(5) = sensor_bit_count(5) + 1
+        end do
+    end do
+    write(LDT_logunit,*)'[DEBUG] Sensor quality bits set after creation:'
+    write(LDT_logunit,*)'[DEBUG]   10GHz (bit 3):', sensor_bit_count(1)
+    write(LDT_logunit,*)'[DEBUG]   18GHz (bit 4):', sensor_bit_count(2)
+    write(LDT_logunit,*)'[DEBUG]   23GHz (bit 5):', sensor_bit_count(3)
+    write(LDT_logunit,*)'[DEBUG]   36GHz (bit 6):', sensor_bit_count(4)
+    write(LDT_logunit,*)'[DEBUG]   89GHz (bit 7):', sensor_bit_count(5)
+    
+    ! Also check what's in qf_from_file
+    write(LDT_logunit,*)'[DEBUG] QualityFlag from file (first 10 pixels, band 1):'
+    do i = 1, min(10, nscans)
+        write(LDT_logunit,*) '[DEBUG]   ', (INT(qf_from_file(j,i,1)), j=1,min(5,nfovs))
     end do
     
     write(LDT_logunit,*)'[INFO] ✓ 8-bit combined quality flags created'

@@ -93,7 +93,7 @@ subroutine WSF_ARFS_RESAMPLE_HOURLY(hour_files, n_files, output_dir, &
     real*4, allocatable :: chan_frequencies(:)
     character*1, allocatable :: chan_polarizations(:)
     
-    integer :: i, j, r, c, ifile
+    integer :: i, j, r, c, ifile,k
     integer :: nscans, nfovs, nchans, ierr, ichan
     real :: freq
     character*1 :: pol
@@ -111,6 +111,8 @@ subroutine WSF_ARFS_RESAMPLE_HOURLY(hour_files, n_files, output_dir, &
     
     ! Logical for checking data presence
     logical :: has_data
+    integer :: qf_bits(8), px_count
+
     
     write(LDT_logunit,*)'[INFO] ========================================='
     write(LDT_logunit,*)'[INFO] WSF HOURLY GROUP PROCESSING'
@@ -609,54 +611,54 @@ subroutine WSF_ARFS_RESAMPLE_HOURLY(hour_files, n_files, output_dir, &
                 ! Bits 0-2: Geophysical flags (based on ARFS_COUNT_QF)
                 
                 ! Set bit 0 (Ocean) if majority vote
-                if (ARFS_QUALITY_FLAG_SUM(c,r,1) > ARFS_COUNT_QF(i,j)/2) then
-                    ARFS_QUALITY_FLAG(c,r) = IOR(ARFS_QUALITY_FLAG(i,j), 1)
+                if (ARFS_QUALITY_FLAG_SUM(c,r,1) > ARFS_COUNT_QF(c,r)/2.0) then
+                    ARFS_QUALITY_FLAG(c,r) = IOR(ARFS_QUALITY_FLAG(c,r), 1)
                 endif
                 
                 ! Set bit 1 (Precipitation) if majority vote
-                if (ARFS_QUALITY_FLAG_SUM(c,r,2) > ARFS_COUNT_QF(i,j)/2) then
-                    ARFS_QUALITY_FLAG(c,r) = IOR(ARFS_QUALITY_FLAG(i,j), 2)
+                if (ARFS_QUALITY_FLAG_SUM(c,r,2) > ARFS_COUNT_QF(c,r)/2.0) then
+                    ARFS_QUALITY_FLAG(c,r) = IOR(ARFS_QUALITY_FLAG(c,r), 2)
                 endif
                 
                 ! Set bit 2 (Snow) if majority vote
-                if (ARFS_QUALITY_FLAG_SUM(c,r,3) > ARFS_COUNT_QF(i,j)/2) then
-                    ARFS_QUALITY_FLAG(c,r) = IOR(ARFS_QUALITY_FLAG(i,j), 4)
+                if (ARFS_QUALITY_FLAG_SUM(c,r,3) > ARFS_COUNT_QF(c,r)/2.0) then
+                    ARFS_QUALITY_FLAG(c,r) = IOR(ARFS_QUALITY_FLAG(c,r), 4)
                 endif
                 
                 ! Bits 3-7: Band-specific sensor quality (based on per-band counts)
                 
                 ! Bit 3: 10 GHz sensor quality
                 if (ARFS_COUNT_10V(c,r) + ARFS_COUNT_10H(c,r) > 0) then
-                    if (sensor_10ghz_count(c,r) > (ARFS_COUNT_10V(c,r) + ARFS_COUNT_10H(i,j))/2) then
-                        ARFS_QUALITY_FLAG(c,r) = IOR(ARFS_QUALITY_FLAG(i,j), 8)
+                    if (sensor_10ghz_count(c,r) > (ARFS_COUNT_10V(c,r) + ARFS_COUNT_10H(c,r))/2.0) then
+                        ARFS_QUALITY_FLAG(c,r) = IOR(ARFS_QUALITY_FLAG(c,r), 8)
                     endif
                 endif
                 
                 ! Bit 4: 18 GHz sensor quality
                 if (ARFS_COUNT_18V(c,r) + ARFS_COUNT_18H(c,r) > 0) then
-                    if (sensor_18ghz_count(c,r) > (ARFS_COUNT_18V(c,r) + ARFS_COUNT_18H(i,j))/2) then
-                        ARFS_QUALITY_FLAG(c,r) = IOR(ARFS_QUALITY_FLAG(i,j), 16)
+                    if (sensor_18ghz_count(c,r) > (ARFS_COUNT_18V(c,r) + ARFS_COUNT_18H(c,r))/2.0) then
+                        ARFS_QUALITY_FLAG(c,r) = IOR(ARFS_QUALITY_FLAG(c,r), 16)
                     endif
                 endif
                 
                 ! Bit 5: 23 GHz sensor quality
                 if (ARFS_COUNT_23V(c,r) + ARFS_COUNT_23H(c,r) > 0) then
-                    if (sensor_23ghz_count(c,r) > (ARFS_COUNT_23V(c,r) + ARFS_COUNT_23H(i,j))/2) then
-                        ARFS_QUALITY_FLAG(c,r) = IOR(ARFS_QUALITY_FLAG(i,j), 32)
+                    if (sensor_23ghz_count(c,r) > (ARFS_COUNT_23V(c,r) + ARFS_COUNT_23H(c,r))/2.0) then
+                        ARFS_QUALITY_FLAG(c,r) = IOR(ARFS_QUALITY_FLAG(c,r), 32)
                     endif
                 endif
                 
                 ! Bit 6: 36 GHz sensor quality
                 if (ARFS_COUNT_36V(c,r) + ARFS_COUNT_36H(c,r) > 0) then
-                    if (sensor_36ghz_count(c,r) > (ARFS_COUNT_36V(c,r) + ARFS_COUNT_36H(i,j))/2) then
-                        ARFS_QUALITY_FLAG(c,r) = IOR(ARFS_QUALITY_FLAG(i,j), 64)
+                    if (sensor_36ghz_count(c,r) > (ARFS_COUNT_36V(c,r) + ARFS_COUNT_36H(c,r))/2.0) then
+                        ARFS_QUALITY_FLAG(c,r) = IOR(ARFS_QUALITY_FLAG(c,r), 64)
                     endif
                 endif
                 
                 ! Bit 7: 89 GHz sensor quality
                 if (ARFS_COUNT_89V(c,r) + ARFS_COUNT_89H(c,r) > 0) then
-                    if (sensor_89ghz_count(c,r) > (ARFS_COUNT_89V(c,r) + ARFS_COUNT_89H(i,j))/2) then
-                        ARFS_QUALITY_FLAG(c,r) = IOR(ARFS_QUALITY_FLAG(i,j), 128)
+                    if (sensor_89ghz_count(c,r) > (ARFS_COUNT_89V(c,r) + ARFS_COUNT_89H(c,r))/2.0) then
+                        ARFS_QUALITY_FLAG(c,r) = IOR(ARFS_QUALITY_FLAG(c,r), 128)
                     endif
                 endif
                 
@@ -664,6 +666,21 @@ subroutine WSF_ARFS_RESAMPLE_HOURLY(hour_files, n_files, output_dir, &
                 ARFS_QUALITY_FLAG(c,r) = -1  ! No data
             endif
         end do
+    end do
+    
+    ! Debug: Check quality flags after transpose
+    qf_bits = 0
+    do i = 1, nscans
+        do j = 1, nfovs
+            do k = 0, 7
+                if (IBITS(quality_flag_in(j,i), k, 1) == 1) qf_bits(k+1) = qf_bits(k+1) + 1
+            end do
+        end do
+    end do
+    
+    write(LDT_logunit,*)'[DEBUG] Quality flag bits after transpose:'
+    do k = 0, 7
+        write(LDT_logunit,*)'[DEBUG]   Bit', k, ':', qf_bits(k+1)
     end do
     
     ! =====================================================================
