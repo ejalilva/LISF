@@ -24,6 +24,7 @@ CONTAINS
 
     SUBROUTINE get_wsf_data_with_flags(filename, &
         tb_lowres, lat, lon, land_frac_low, quality_flag, &  ! This should be 3D output
+        band_quality_flags, &  ! NEW: Add separate band quality flags
         earth_inc_angle, snow, precip, &
         nscans, nfovs, nchans, & 
         chan_frequencies, chan_polarizations, ierr)
@@ -33,7 +34,8 @@ CONTAINS
     real*4, allocatable, intent(out) :: lat(:,:)
     real*4, allocatable, intent(out) :: lon(:,:)
     real*4, allocatable, intent(out) :: land_frac_low(:,:)
-    integer*1, allocatable, intent(out) :: quality_flag(:,:)
+    integer*4, allocatable, intent(out) :: quality_flag(:,:)
+    integer*4, allocatable, intent(out) :: band_quality_flags(:,:,:)  ! NEW: (nfovs, nscans, 6 bands)
     real*4, allocatable, intent(out) :: earth_inc_angle(:,:,:)
     integer*4, allocatable, intent(out) :: snow(:,:)
     integer*4, allocatable, intent(out) :: precip(:,:)
@@ -48,7 +50,7 @@ CONTAINS
     integer :: nscanr_dimid, nfovr_dimid, nchan_dimid, nband_dimid
     integer :: nband
     logical :: file_exists
-    integer :: i, j, ichan
+    integer :: i, j, ichan, iband
     real :: sil, tt18, denom
     
     ! Temporary arrays for channel extraction (Fortran order)
@@ -123,6 +125,7 @@ CONTAINS
     allocate(snow(nfovs, nscans))
     allocate(precip(nfovs, nscans))
     allocate(quality_flag(nfovs, nscans))
+    allocate(band_quality_flags(nfovs, nscans, 6))  ! 6 bands max
     allocate(chan_frequencies(nchans))
     allocate(chan_polarizations(nchans))
     
@@ -145,6 +148,7 @@ CONTAINS
     snow = 0
     precip = 0
     quality_flag = 0
+    band_quality_flags = 0
     
     write(LDT_logunit,*)'[INFO] ========================================='
     write(LDT_logunit,*)'[INFO] Reading variables from NetCDF...'
@@ -311,29 +315,30 @@ CONTAINS
     write(LDT_logunit,*)'[INFO] Creating quality flags...'
     
     ! =====================================================================
-    ! CREATE QUALITY FLAGS - USE PROPER FILL VALUE CHECKS
+    ! CREATE QUALITY FLAGS WITH PROPER BAND-SPECIFIC HANDLING
     ! =====================================================================
     do j = 1, nfovs
         do i = 1, nscans
             quality_flag(j,i) = 0
             
             ! Bit 0: Ocean (land_frac < 0.5)
-            if (land_frac_low(j,i) < 0.5) then
+            if (land_frac_low(j,i) >= 0.0 .and. land_frac_low(j,i) < 0.5) then
                 quality_flag(j,i) = IOR(quality_flag(j,i), 1)
             endif
+            
+            ! Only check precip/snow over land
             if (land_frac_low(j,i) > 0.5) then
                 ! Bit 1: Precipitation detection
-                ! Only compute if all required TBs are valid (> 0 means not fill value)
                 if (tb_18v(j,i) > 0.0 .and. tb_18h(j,i) > 0.0 .and. &
                     tb_23v(j,i) > 0.0) then
-                    
                     denom = tb_18v(j,i) + tb_18h(j,i)
-                    sil = (tb_18v(j,i) - tb_18h(j,i)) / denom
-                    tt18 = (tb_18v(j,i) - tb_23v(j,i))
-                    
-                    if ((sil < 0.005) .and. (tt18 < -2.0)) then
-                        precip(j,i) = 1
-                        quality_flag(j,i) = IOR(quality_flag(j,i), 2)
+                    if (denom > 0.0) then
+                        sil = (tb_18v(j,i) - tb_18h(j,i)) / denom
+                        tt18 = (tb_18v(j,i) - tb_23v(j,i))
+                        if ((sil < 0.005) .and. (tt18 < -2.0)) then
+                            precip(j,i) = 1
+                            quality_flag(j,i) = IOR(quality_flag(j,i), 2)
+                        endif
                     endif
                 endif
                 
@@ -344,87 +349,68 @@ CONTAINS
                         quality_flag(j,i) = IOR(quality_flag(j,i), 4)
                     endif
                 endif
+            endif
+            
+            ! ================================================================
+            ! BAND-SPECIFIC QUALITY FLAGS (Bits 3-7)
+            ! Check if each band has bad quality
+            ! ================================================================
+            
+            ! Store per-band quality for later use
+            do iband = 1, min(nband, 6)
+                ! A band is considered bad if ANY of these conditions are true:
+                ! - QualityFlag bit 0 (IsNotValid) is set
+                ! - QualityFlag bit 1 (IsExclusionCondition) is set  
+                ! - QualityFlag bit 2 (IsDegradationCondition) is set
                 
-                ! ================================================================
-                ! BAND-SPECIFIC SENSOR QUALITY FLAGS (Bits 3-7)
-                ! Check bits 0-4 of sensor quality flag for each band
-                ! ================================================================
-                
-                ! Bit 3: Band 1 (10 GHz) sensor quality
-                if (nband >= 1) then
-                    if (IAND(INT(qf_from_file(j,i,1)), 7) /= 0) then
-                        quality_flag(j,i) = IOR(quality_flag(j,i), 8)  ! 2^3 = 8
-                    endif
+                if (IBITS(INT(qf_from_file(j,i,iband)), 0, 1) == 1 .or. &  ! IsNotValid
+                    IBITS(INT(qf_from_file(j,i,iband)), 1, 1) == 1 .or. &  ! IsExclusionCondition
+                    IBITS(INT(qf_from_file(j,i,iband)), 2, 1) == 1) then   ! IsDegradationCondition
+                    band_quality_flags(j,i,iband) = 1  ! Mark band as bad
+                else
+                    band_quality_flags(j,i,iband) = 0  ! Band is good
                 endif
-                
-                ! Bit 4: Band 2 (18 GHz) sensor quality
-                if (nband >= 2) then
-                    if (IAND(INT(qf_from_file(j,i,2)), 7) /= 0) then
-                        quality_flag(j,i) = IOR(quality_flag(j,i), 16)  ! 2^4 = 16
-                    endif
-                endif
-                
-                ! Bit 5: Band 3 (23 GHz) sensor quality
-                if (nband >= 3) then
-                    if (IAND(INT(qf_from_file(j,i,3)), 7) /= 0) then
-                        quality_flag(j,i) = IOR(quality_flag(j,i), 32)  ! 2^5 = 32
-                    endif
-                endif
-                
-                ! Bit 6: Band 4 (36 GHz) sensor quality
-                if (nband >= 4) then
-                    if (IAND(INT(qf_from_file(j,i,4)), 7) /= 0) then
-                        quality_flag(j,i) = IOR(quality_flag(j,i), 64)  ! 2^6 = 64
-                    endif
-                endif
-                
-                ! Bit 7: Band 5 (89 GHz) sensor quality
-                if (nband >= 5) then
-                    if (IAND(INT(qf_from_file(j,i,5)), 7) /= 0) then
-                        quality_flag(j,i) = IOR(quality_flag(j,i), 128)  ! 2^7 = 128
-                    endif
-                endif
+            end do
+            
+            ! Map band quality to the combined quality flag bits 3-7
+            ! Band 1: 10.65 GHz -> bit 3
+            if (nband >= 1 .and. band_quality_flags(j,i,1) == 1) then
+                quality_flag(j,i) = IOR(quality_flag(j,i), 8)   ! 2^3
+            endif
+            
+            ! Band 2: 18.7 GHz -> bit 4
+            if (nband >= 2 .and. band_quality_flags(j,i,2) == 1) then
+                quality_flag(j,i) = IOR(quality_flag(j,i), 16)  ! 2^4
+            endif
+            
+            ! Band 3: 23.8 GHz -> bit 5
+            if (nband >= 3 .and. band_quality_flags(j,i,3) == 1) then
+                quality_flag(j,i) = IOR(quality_flag(j,i), 32)  ! 2^5
+            endif
+            
+            ! Band 4: 36.5 GHz -> bit 6
+            if (nband >= 4 .and. band_quality_flags(j,i,4) == 1) then
+                quality_flag(j,i) = IOR(quality_flag(j,i), 64)  ! 2^6
+            endif
+            
+            ! Band 5: 89.0 GHz -> bit 7
+            if (nband >= 5 .and. band_quality_flags(j,i,5) == 1) then
+                quality_flag(j,i) = IOR(quality_flag(j,i), 128) ! 2^7
             endif
         end do
     end do
     
-    sensor_bit_count = 0
-    do j = 1, nfovs
-        do i = 1, nscans
-            if (IBITS(quality_flag(j,i), 3, 1) == 1) sensor_bit_count(1) = sensor_bit_count(1) + 1
-            if (IBITS(quality_flag(j,i), 4, 1) == 1) sensor_bit_count(2) = sensor_bit_count(2) + 1
-            if (IBITS(quality_flag(j,i), 5, 1) == 1) sensor_bit_count(3) = sensor_bit_count(3) + 1
-            if (IBITS(quality_flag(j,i), 6, 1) == 1) sensor_bit_count(4) = sensor_bit_count(4) + 1
-            if (IBITS(quality_flag(j,i), 7, 1) == 1) sensor_bit_count(5) = sensor_bit_count(5) + 1
-        end do
-    end do
-    write(LDT_logunit,*)'[DEBUG] Sensor quality bits set after creation:'
-    write(LDT_logunit,*)'[DEBUG]   10GHz (bit 3):', sensor_bit_count(1)
-    write(LDT_logunit,*)'[DEBUG]   18GHz (bit 4):', sensor_bit_count(2)
-    write(LDT_logunit,*)'[DEBUG]   23GHz (bit 5):', sensor_bit_count(3)
-    write(LDT_logunit,*)'[DEBUG]   36GHz (bit 6):', sensor_bit_count(4)
-    write(LDT_logunit,*)'[DEBUG]   89GHz (bit 7):', sensor_bit_count(5)
-    
-    ! Also check what's in qf_from_file
-    write(LDT_logunit,*)'[DEBUG] QualityFlag from file (first 10 pixels, band 1):'
-    do i = 1, min(10, nscans)
-        write(LDT_logunit,*) '[DEBUG]   ', (INT(qf_from_file(j,i,1)), j=1,min(5,nfovs))
-    end do
-    
-    write(LDT_logunit,*)'[INFO] ✓ 8-bit combined quality flags created'
-    write(LDT_logunit,*)'[INFO]   Bit 0: Ocean (land_frac < 50%)'
-    write(LDT_logunit,*)'[INFO]   Bit 1: Precipitation'
-    write(LDT_logunit,*)'[INFO]   Bit 2: Snow'
-    write(LDT_logunit,*)'[INFO]   Bit 3: Sensor quality for 10GHz (Band 1)'
-    write(LDT_logunit,*)'[INFO]   Bit 4: Sensor quality for 18GHz (Band 2)'
-    write(LDT_logunit,*)'[INFO]   Bit 5: Sensor quality for 23GHz (Band 3)'
-    write(LDT_logunit,*)'[INFO]   Bit 6: Sensor quality for 36GHz (Band 4)'
-    write(LDT_logunit,*)'[INFO]   Bit 7: Sensor quality for 89GHz (Band 5)'
+    ! Debug output
+    write(LDT_logunit,*)'[INFO] Quality flag statistics:'
+    write(LDT_logunit,*)'[INFO]   Ocean pixels: ', count(IBITS(quality_flag, 0, 1) == 1)
+    write(LDT_logunit,*)'[INFO]   Precip pixels: ', count(IBITS(quality_flag, 1, 1) == 1)
+    write(LDT_logunit,*)'[INFO]   Snow pixels: ', count(IBITS(quality_flag, 2, 1) == 1)
+    write(LDT_logunit,*)'[INFO]   Bad 10GHz: ', count(IBITS(quality_flag, 3, 1) == 1)
+    write(LDT_logunit,*)'[INFO]   Bad 18GHz: ', count(IBITS(quality_flag, 4, 1) == 1)
+    write(LDT_logunit,*)'[INFO]   Bad 23GHz: ', count(IBITS(quality_flag, 5, 1) == 1)
+    write(LDT_logunit,*)'[INFO]   Bad 36GHz: ', count(IBITS(quality_flag, 6, 1) == 1)
+    write(LDT_logunit,*)'[INFO]   Bad 89GHz: ', count(IBITS(quality_flag, 7, 1) == 1)
     write(LDT_logunit,*)'[INFO] ========================================='
-    write(LDT_logunit,*)'[DEBUG] Ocean flags set: ', count(IBITS(quality_flag, 0, 1) == 1)
-    write(LDT_logunit,*)'[DEBUG] Precip flags set: ', count(IBITS(quality_flag, 1, 1) == 1)
-    write(LDT_logunit,*)'[DEBUG] Snow flags set: ', count(IBITS(quality_flag, 2, 1) == 1)
-    write(LDT_logunit,*)'[DEBUG] Land frac range: ', minval(land_frac_low), maxval(land_frac_low)
     
     ! Cleanup temporary arrays
     deallocate(tb_18v, tb_18h, tb_23v, tb_36v, tb_89v)

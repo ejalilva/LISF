@@ -6,7 +6,7 @@
 !
 ! SUBROUTINE: WSF_ARFS_RESAMPLE_HOURLY
 !
-! DESCRIPTION: FIXED - Correct dimension ordering for snow_in/precip_in
+! DESCRIPTION: Simplified hourly resampling with proper band quality handling
 !
 !-------------------------------------------------------------------------
 
@@ -34,7 +34,6 @@ subroutine WSF_ARFS_RESAMPLE_HOURLY(hour_files, n_files, output_dir, &
     real*8, allocatable :: ARFS_LAT(:), ARFS_LON(:)
     
     ! Accumulated data arrays
-    real*8, allocatable :: ARFS_TIME_SUM(:,:)
     real*4, allocatable :: ARFS_TB_10H_SUM(:,:), ARFS_TB_10V_SUM(:,:)
     real*4, allocatable :: ARFS_TB_18H_SUM(:,:), ARFS_TB_18V_SUM(:,:)
     real*4, allocatable :: ARFS_TB_23H_SUM(:,:), ARFS_TB_23V_SUM(:,:)
@@ -48,7 +47,7 @@ subroutine WSF_ARFS_RESAMPLE_HOURLY(hour_files, n_files, output_dir, &
     integer*4, allocatable :: ARFS_COUNT_23H(:,:), ARFS_COUNT_23V(:,:)
     integer*4, allocatable :: ARFS_COUNT_36H(:,:), ARFS_COUNT_36V(:,:)
     integer*4, allocatable :: ARFS_COUNT_89H(:,:), ARFS_COUNT_89V(:,:)
-    integer*4, allocatable :: ARFS_COUNT_LAND(:,:), ARFS_COUNT_TIME(:,:)
+    integer*4, allocatable :: ARFS_COUNT_LAND(:,:)
     
     ! Final arrays
     real*8, allocatable :: ARFS_TIME(:,:)
@@ -61,7 +60,7 @@ subroutine WSF_ARFS_RESAMPLE_HOURLY(hour_files, n_files, output_dir, &
     integer*1, allocatable :: ARFS_QUALITY_FLAG(:,:)
     integer*4, allocatable :: ARFS_SAMPLE_V(:,:), ARFS_SAMPLE_H(:,:)
     
-    ! Temporary arrays
+    ! Temporary arrays for each file
     real*8, allocatable :: TEMP_TIME(:,:)
     real*4, allocatable :: TEMP_TB_10H(:,:), TEMP_TB_10V(:,:)
     real*4, allocatable :: TEMP_TB_18H(:,:), TEMP_TB_18V(:,:)
@@ -72,17 +71,18 @@ subroutine WSF_ARFS_RESAMPLE_HOURLY(hour_files, n_files, output_dir, &
     integer*1, allocatable :: TEMP_QUALITY_FLAG(:,:)
     integer*4, allocatable :: TEMP_SAMPLE_V(:,:), TEMP_SAMPLE_H(:,:)
     
-    ! WSF input data - FORTRAN ORDER (nFOVR, nScanR)
+    ! WSF input data
     real*4, allocatable :: tb_lowres(:,:,:)
     real*4, allocatable :: lat_in(:,:)
     real*4, allocatable :: lon_in(:,:)
     real*4, allocatable :: land_frac_low(:,:)
-    integer*1, allocatable :: quality_flag_in(:,:)
+    integer*4, allocatable :: quality_flag_in(:,:)
+    integer*4, allocatable :: band_quality_flags(:,:,:)  ! NEW
     real*4, allocatable :: earth_inc_angle(:,:,:)
     integer*4, allocatable :: snow_in(:,:)
     integer*4, allocatable :: precip_in(:,:)
     
-    ! Channel extraction arrays - FORTRAN ORDER (nFOVR, nScanR)
+    ! Channel extraction arrays
     real*4, allocatable :: tb_10h(:,:), tb_10v(:,:)
     real*4, allocatable :: tb_18h(:,:), tb_18v(:,:)
     real*4, allocatable :: tb_23h(:,:), tb_23v(:,:)
@@ -93,29 +93,18 @@ subroutine WSF_ARFS_RESAMPLE_HOURLY(hour_files, n_files, output_dir, &
     real*4, allocatable :: chan_frequencies(:)
     character*1, allocatable :: chan_polarizations(:)
     
-    integer :: i, j, r, c, ifile,k
+    ! Quality flag accumulation
+    integer*4, allocatable :: ARFS_QF_COUNTS(:,:,:)  ! (2560, 1920, 8 bits)
+    integer*4, allocatable :: ARFS_QF_TOTALS(:,:)
+    
+    integer :: i, j, r, c, ifile
     integer :: nscans, nfovs, nchans, ierr, ichan
     real :: freq
     character*1 :: pol
     character(len=255) :: output_filename
     
-    integer*4, allocatable :: ARFS_COUNT_QF(:,:)
-    integer*4, allocatable :: ARFS_QUALITY_FLAG_SUM(:,:,:)  ! (2560, 1920, 8) for each bit
-    
-    ! Band-specific sensor quality counters
-    INTEGER, ALLOCATABLE :: sensor_10ghz_count(:,:)
-    INTEGER, ALLOCATABLE :: sensor_18ghz_count(:,:)
-    INTEGER, ALLOCATABLE :: sensor_23ghz_count(:,:)
-    INTEGER, ALLOCATABLE :: sensor_36ghz_count(:,:)
-    INTEGER, ALLOCATABLE :: sensor_89ghz_count(:,:)
-    
-    ! Logical for checking data presence
-    logical :: has_data
-    integer :: qf_bits(8), px_count
-
-    
     write(LDT_logunit,*)'[INFO] ========================================='
-    write(LDT_logunit,*)'[INFO] WSF HOURLY GROUP PROCESSING'
+    write(LDT_logunit,*)'[INFO] WSF HOURLY GROUP PROCESSING - FIXED'
     write(LDT_logunit,*)'[INFO] Hour: ', hour_str, 'H'
     write(LDT_logunit,*)'[INFO] Number of files: ', n_files
     write(LDT_logunit,*)'[INFO] ========================================='
@@ -133,7 +122,6 @@ subroutine WSF_ARFS_RESAMPLE_HOURLY(hour_files, n_files, output_dir, &
     end do
     
     ! Allocate accumulation arrays
-    allocate(ARFS_TIME_SUM(2560,1920))
     allocate(ARFS_TB_10H_SUM(2560,1920), ARFS_TB_10V_SUM(2560,1920))
     allocate(ARFS_TB_18H_SUM(2560,1920), ARFS_TB_18V_SUM(2560,1920))
     allocate(ARFS_TB_23H_SUM(2560,1920), ARFS_TB_23V_SUM(2560,1920))
@@ -141,7 +129,6 @@ subroutine WSF_ARFS_RESAMPLE_HOURLY(hour_files, n_files, output_dir, &
     allocate(ARFS_TB_89H_SUM(2560,1920), ARFS_TB_89V_SUM(2560,1920))
     allocate(ARFS_LAND_FRAC_SUM(2560,1920))
     
-    allocate(ARFS_COUNT_TIME(2560,1920))
     allocate(ARFS_COUNT_10H(2560,1920), ARFS_COUNT_10V(2560,1920))
     allocate(ARFS_COUNT_18H(2560,1920), ARFS_COUNT_18V(2560,1920))
     allocate(ARFS_COUNT_23H(2560,1920), ARFS_COUNT_23V(2560,1920))
@@ -158,15 +145,11 @@ subroutine WSF_ARFS_RESAMPLE_HOURLY(hour_files, n_files, output_dir, &
     allocate(TEMP_LAND_FRAC(2560,1920))
     allocate(TEMP_QUALITY_FLAG(2560,1920))
     allocate(TEMP_SAMPLE_V(2560,1920), TEMP_SAMPLE_H(2560,1920))
-    allocate(ARFS_COUNT_QF(2560,1920))
-    allocate(ARFS_QUALITY_FLAG_SUM(2560,1920,8))  ! Track each bit separately
-    allocate(sensor_10ghz_count(2560,1920))
-    allocate(sensor_18ghz_count(2560,1920))
-    allocate(sensor_23ghz_count(2560,1920))
-    allocate(sensor_36ghz_count(2560,1920))
-    allocate(sensor_89ghz_count(2560,1920))    ! Initialize accumulation arrays
     
-    ARFS_TIME_SUM = 0.0
+    allocate(ARFS_QF_COUNTS(2560,1920,8))
+    allocate(ARFS_QF_TOTALS(2560,1920))
+    
+    ! Initialize accumulation arrays
     ARFS_TB_10H_SUM = 0.0
     ARFS_TB_10V_SUM = 0.0
     ARFS_TB_18H_SUM = 0.0
@@ -179,7 +162,6 @@ subroutine WSF_ARFS_RESAMPLE_HOURLY(hour_files, n_files, output_dir, &
     ARFS_TB_89V_SUM = 0.0
     ARFS_LAND_FRAC_SUM = 0.0
     
-    ARFS_COUNT_TIME = 0
     ARFS_COUNT_10H = 0
     ARFS_COUNT_10V = 0
     ARFS_COUNT_18H = 0
@@ -191,14 +173,9 @@ subroutine WSF_ARFS_RESAMPLE_HOURLY(hour_files, n_files, output_dir, &
     ARFS_COUNT_89H = 0
     ARFS_COUNT_89V = 0
     ARFS_COUNT_LAND = 0
-    ARFS_COUNT_QF = 0
-    ARFS_QUALITY_FLAG_SUM = 0
-    sensor_10ghz_count = 0
-    sensor_18ghz_count = 0
-    sensor_23ghz_count = 0
-    sensor_36ghz_count = 0
-    sensor_89ghz_count = 0
-
+    ARFS_QF_COUNTS = 0
+    ARFS_QF_TOTALS = 0
+    
     ! =====================================================================
     ! PROCESS EACH FILE
     ! =====================================================================
@@ -224,9 +201,10 @@ subroutine WSF_ARFS_RESAMPLE_HOURLY(hour_files, n_files, output_dir, &
         TEMP_SAMPLE_V = 0
         TEMP_SAMPLE_H = 0
         
-        ! Read WSF data
+        ! Read WSF data WITH band quality flags
         call get_wsf_data_with_flags(hour_files(ifile)%filename, &
             tb_lowres, lat_in, lon_in, land_frac_low, quality_flag_in, &
+            band_quality_flags, &  ! NEW parameter
             earth_inc_angle, snow_in, precip_in, &
             nscans, nfovs, nchans, &
             chan_frequencies, chan_polarizations, &
@@ -242,7 +220,7 @@ subroutine WSF_ARFS_RESAMPLE_HOURLY(hour_files, n_files, output_dir, &
         write(LDT_logunit,*)'[INFO]   nScanR = ', nscans
         write(LDT_logunit,*)'[INFO]   nChan  = ', nchans
         
-        ! Extract channels - MATCH invdist signature: (nscans, nfovs)
+        ! Extract channels - transpose from (nfovs, nscans) to (nscans, nfovs)
         allocate(tb_10h(nscans, nfovs))
         allocate(tb_10v(nscans, nfovs))
         allocate(tb_18h(nscans, nfovs))
@@ -267,107 +245,61 @@ subroutine WSF_ARFS_RESAMPLE_HOURLY(hour_files, n_files, output_dir, &
         tb_89h = -9999.0
         tb_89v = -9999.0
         
-        ! Extract each channel - TRANSPOSE from (nfovs, nscans) to (nscans, nfovs)
+        ! Extract each channel
         do ichan = 1, nchans
             freq = chan_frequencies(ichan)
             pol = chan_polarizations(ichan)
             
+            ! Transpose while extracting
             if (abs(freq - 10.65) < 1.0) then
                 if (pol == 'v' .or. pol == 'V') then
-                    do i = 1, nscans
-                        do j = 1, nfovs
-                            tb_10v(i,j) = tb_lowres(j,i,ichan)
-                        end do
-                    end do
-                endif
-                if (pol == 'h' .or. pol == 'H') then
-                    do i = 1, nscans
-                        do j = 1, nfovs
-                            tb_10h(i,j) = tb_lowres(j,i,ichan)
-                        end do
-                    end do
+                    tb_10v = TRANSPOSE(tb_lowres(:,:,ichan))
+                else if (pol == 'h' .or. pol == 'H') then
+                    tb_10h = TRANSPOSE(tb_lowres(:,:,ichan))
                 endif
             else if (abs(freq - 18.7) < 1.0) then
                 if (pol == 'v' .or. pol == 'V') then
-                    do i = 1, nscans
-                        do j = 1, nfovs
-                            tb_18v(i,j) = tb_lowres(j,i,ichan)
-                        end do
-                    end do
-                endif
-                if (pol == 'h' .or. pol == 'H') then
-                    do i = 1, nscans
-                        do j = 1, nfovs
-                            tb_18h(i,j) = tb_lowres(j,i,ichan)
-                        end do
-                    end do
+                    tb_18v = TRANSPOSE(tb_lowres(:,:,ichan))
+                else if (pol == 'h' .or. pol == 'H') then
+                    tb_18h = TRANSPOSE(tb_lowres(:,:,ichan))
                 endif
             else if (abs(freq - 23.8) < 1.0) then
                 if (pol == 'v' .or. pol == 'V') then
-                    do i = 1, nscans
-                        do j = 1, nfovs
-                            tb_23v(i,j) = tb_lowres(j,i,ichan)
-                        end do
-                    end do
-                endif
-                if (pol == 'h' .or. pol == 'H') then
-                    do i = 1, nscans
-                        do j = 1, nfovs
-                            tb_23h(i,j) = tb_lowres(j,i,ichan)
-                        end do
-                    end do
+                    tb_23v = TRANSPOSE(tb_lowres(:,:,ichan))
+                else if (pol == 'h' .or. pol == 'H') then
+                    tb_23h = TRANSPOSE(tb_lowres(:,:,ichan))
                 endif
             else if (abs(freq - 36.5) < 1.0) then
                 if (pol == 'v' .or. pol == 'V') then
-                    do i = 1, nscans
-                        do j = 1, nfovs
-                            tb_36v(i,j) = tb_lowres(j,i,ichan)
-                        end do
-                    end do
-                endif
-                if (pol == 'h' .or. pol == 'H') then
-                    do i = 1, nscans
-                        do j = 1, nfovs
-                            tb_36h(i,j) = tb_lowres(j,i,ichan)
-                        end do
-                    end do
+                    tb_36v = TRANSPOSE(tb_lowres(:,:,ichan))
+                else if (pol == 'h' .or. pol == 'H') then
+                    tb_36h = TRANSPOSE(tb_lowres(:,:,ichan))
                 endif
             else if (abs(freq - 89.0) < 1.0) then
                 if (pol == 'v' .or. pol == 'V') then
-                    do i = 1, nscans
-                        do j = 1, nfovs
-                            tb_89v(i,j) = tb_lowres(j,i,ichan)
-                        end do
-                    end do
+                    tb_89v = TRANSPOSE(tb_lowres(:,:,ichan))
+                else if (pol == 'h' .or. pol == 'H') then
+                    tb_89h = TRANSPOSE(tb_lowres(:,:,ichan))
                 endif
-                if (pol == 'h' .or. pol == 'H') then
-                    do i = 1, nscans
-                        do j = 1, nfovs
-                            tb_89h(i,j) = tb_lowres(j,i,ichan)
-                        end do
-                    end do
-                endif
-            end if
+            endif
         end do
         
         time_array = 0.0
         
-        write(LDT_logunit,*)'[INFO] Calling inverse distance resampler...'
-        write(LDT_logunit,*)'[INFO]   Input:  (nScanR, nFOVR) = (', nscans, ',', nfovs, ')'
-        write(LDT_logunit,*)'[INFO]   Output: (2560, 1920)'
+        write(LDT_logunit,*)'[INFO] Calling inverse distance resampler WITH band quality...'
         
-        ! Transpose lat/lon and other 2D arrays to match invdist signature
-        ! invdist expects (nscans, nfovs) but TOOLSUBS gives (nfovs, nscans)
+        ! Call resampler WITH band quality flags
         call WSF2ARFS_INVDIS(time_array, &
             tb_10h, tb_10v, tb_18h, tb_18v, &
             tb_23h, tb_23v, tb_36h, tb_36v, &
             tb_89h, tb_89v, &
-            reshape(land_frac_low, (/nscans, nfovs/), order=(/2,1/)), &
-            reshape(snow_in, (/nscans, nfovs/), order=(/2,1/)), &
-            reshape(precip_in, (/nscans, nfovs/), order=(/2,1/)), &
-            reshape(quality_flag_in, (/nscans, nfovs/), order=(/2,1/)), &
-            reshape(lat_in, (/nscans, nfovs/), order=(/2,1/)), &
-            reshape(lon_in, (/nscans, nfovs/), order=(/2,1/)), &
+            TRANSPOSE(land_frac_low), &
+            TRANSPOSE(snow_in), &
+            TRANSPOSE(precip_in), &
+            TRANSPOSE(quality_flag_in), &
+            reshape(band_quality_flags, (/nscans, nfovs, 6/), order=(/2,1,3/)), &  ! NEW: transpose band flags
+            TRANSPOSE(lat_in), &
+            TRANSPOSE(lon_in), &
             nscans, nfovs, &
             ARFS_LAT, ARFS_LON, &
             TEMP_TIME, TEMP_LAND_FRAC, &
@@ -379,12 +311,10 @@ subroutine WSF_ARFS_RESAMPLE_HOURLY(hour_files, n_files, output_dir, &
             TEMP_QUALITY_FLAG, &
             TEMP_SAMPLE_V, TEMP_SAMPLE_H)
         
-        ! ACCUMULATE DATA
+        ! Accumulate data
         do r = 1, 1920
             do c = 1, 2560
-                ! ===========================================================
-                ! TB ACCUMULATION (unchanged)
-                ! ===========================================================
+                ! TB accumulation
                 if (TEMP_TB_10H(c,r) > 0.0) then
                     ARFS_TB_10H_SUM(c,r) = ARFS_TB_10H_SUM(c,r) + TEMP_TB_10H(c,r)
                     ARFS_COUNT_10H(c,r) = ARFS_COUNT_10H(c,r) + 1
@@ -430,83 +360,25 @@ subroutine WSF_ARFS_RESAMPLE_HOURLY(hour_files, n_files, output_dir, &
                     ARFS_COUNT_LAND(c,r) = ARFS_COUNT_LAND(c,r) + 1
                 endif
                 
-                ! ===========================================================
-                ! QUALITY FLAG ACCUMULATION (CORRECTED)
-                ! ===========================================================
-                
-                ! Check if this pixel has ANY valid data
-                has_data = (TEMP_TB_10V(c,r) > 0.0 .OR. TEMP_TB_10H(c,r) > 0.0 .OR. &
-                           TEMP_TB_18V(c,r) > 0.0 .OR. TEMP_TB_18H(c,r) > 0.0 .OR. &
-                           TEMP_TB_23V(c,r) > 0.0 .OR. TEMP_TB_23H(c,r) > 0.0 .OR. &
-                           TEMP_TB_36V(c,r) > 0.0 .OR. TEMP_TB_36H(c,r) > 0.0 .OR. &
-                           TEMP_TB_89V(c,r) > 0.0 .OR. TEMP_TB_89H(c,r) > 0.0)
-                
-                ! Bits 0-2: Footprint-level flags (ocean, precip, snow)
-                ! Count whenever ANY band has data
-                if (has_data) then
-                    ARFS_COUNT_QF(c,r) = ARFS_COUNT_QF(c,r) + 1
-                    
-                    ! Bit 0: Ocean
-                    if (IBITS(TEMP_QUALITY_FLAG(c,r), 0, 1) == 1) then
-                        ARFS_QUALITY_FLAG_SUM(c,r,1) = ARFS_QUALITY_FLAG_SUM(c,r,1) + 1
-                    endif
-                    
-                    ! Bit 1: Precipitation
-                    if (IBITS(TEMP_QUALITY_FLAG(c,r), 1, 1) == 1) then
-                        ARFS_QUALITY_FLAG_SUM(c,r,2) = ARFS_QUALITY_FLAG_SUM(c,r,2) + 1
-                    endif
-                    
-                    ! Bit 2: Snow
-                    if (IBITS(TEMP_QUALITY_FLAG(c,r), 2, 1) == 1) then
-                        ARFS_QUALITY_FLAG_SUM(c,r,3) = ARFS_QUALITY_FLAG_SUM(c,r,3) + 1
-                    endif
+                ! Accumulate quality flags
+                if (INT(TEMP_QUALITY_FLAG(c,r)) >= 0) then
+                    ARFS_QF_TOTALS(c,r) = ARFS_QF_TOTALS(c,r) + 1
+                    do i = 0, 7
+                        if (IBITS(TEMP_QUALITY_FLAG(c,r), i, 1) == 1) then
+                            ARFS_QF_COUNTS(c,r,i+1) = ARFS_QF_COUNTS(c,r,i+1) + 1
+                        endif
+                    end do
                 endif
                 
-                ! Bits 3-7: Band-specific sensor quality flags
-                ! Each tracked independently based on which band has data
-                
-                ! Bit 3: 10 GHz sensor quality
-                if (TEMP_TB_10V(c,r) > 0.0 .OR. TEMP_TB_10H(c,r) > 0.0) then
-                    if (IBITS(TEMP_QUALITY_FLAG(c,r), 3, 1) == 1) then
-                        sensor_10ghz_count(c,r) = sensor_10ghz_count(c,r) + 1
-                    endif
-                endif
-                
-                ! Bit 4: 18 GHz sensor quality
-                if (TEMP_TB_18V(c,r) > 0.0 .OR. TEMP_TB_18H(c,r) > 0.0) then
-                    if (IBITS(TEMP_QUALITY_FLAG(c,r), 4, 1) == 1) then
-                        sensor_18ghz_count(c,r) = sensor_18ghz_count(c,r) + 1
-                    endif
-                endif
-                
-                ! Bit 5: 23 GHz sensor quality
-                if (TEMP_TB_23V(c,r) > 0.0 .OR. TEMP_TB_23H(c,r) > 0.0) then
-                    if (IBITS(TEMP_QUALITY_FLAG(c,r), 5, 1) == 1) then
-                        sensor_23ghz_count(c,r) = sensor_23ghz_count(c,r) + 1
-                    endif
-                endif
-                
-                ! Bit 6: 36 GHz sensor quality
-                if (TEMP_TB_36V(c,r) > 0.0 .OR. TEMP_TB_36H(c,r) > 0.0) then
-                    if (IBITS(TEMP_QUALITY_FLAG(c,r), 6, 1) == 1) then
-                        sensor_36ghz_count(c,r) = sensor_36ghz_count(c,r) + 1
-                    endif
-                endif
-                
-                ! Bit 7: 89 GHz sensor quality
-                if (TEMP_TB_89V(c,r) > 0.0 .OR. TEMP_TB_89H(c,r) > 0.0) then
-                    if (IBITS(TEMP_QUALITY_FLAG(c,r), 7, 1) == 1) then
-                        sensor_89ghz_count(c,r) = sensor_89ghz_count(c,r) + 1
-                    endif
-                endif
-                
+                ! Accumulate sample counts
+                ARFS_SAMPLE_V(c,r) = ARFS_SAMPLE_V(c,r) + TEMP_SAMPLE_V(c,r)
+                ARFS_SAMPLE_H(c,r) = ARFS_SAMPLE_H(c,r) + TEMP_SAMPLE_H(c,r)
             end do
         end do
-
         
         ! Cleanup for this file
         deallocate(tb_lowres, lat_in, lon_in)
-        deallocate(land_frac_low, quality_flag_in)
+        deallocate(land_frac_low, quality_flag_in, band_quality_flags)
         deallocate(earth_inc_angle, snow_in, precip_in)
         deallocate(chan_frequencies, chan_polarizations)
         deallocate(tb_10h, tb_10v, tb_18h, tb_18v)
@@ -526,161 +398,90 @@ subroutine WSF_ARFS_RESAMPLE_HOURLY(hour_files, n_files, output_dir, &
     allocate(ARFS_TB_89H(2560,1920), ARFS_TB_89V(2560,1920))
     allocate(ARFS_LAND_FRAC(2560,1920))
     allocate(ARFS_QUALITY_FLAG(2560,1920))
-    allocate(ARFS_SAMPLE_V(2560,1920), ARFS_SAMPLE_H(2560,1920))
     
     ARFS_TIME = 0.0
-    ARFS_TB_10H = 0.0
-    ARFS_TB_10V = 0.0
-    ARFS_TB_18H = 0.0
-    ARFS_TB_18V = 0.0
-    ARFS_TB_23H = 0.0
-    ARFS_TB_23V = 0.0
-    ARFS_TB_36H = 0.0
-    ARFS_TB_36V = 0.0
-    ARFS_TB_89H = 0.0
-    ARFS_TB_89V = 0.0
-    ARFS_LAND_FRAC = 0.0
-    ARFS_QUALITY_FLAG = 0
-    ARFS_SAMPLE_V = 0
-    ARFS_SAMPLE_H = 0
     
+    ! Calculate means
     do r = 1, 1920
         do c = 1, 2560
             if (ARFS_COUNT_10H(c,r) > 0) then
                 ARFS_TB_10H(c,r) = ARFS_TB_10H_SUM(c,r) / real(ARFS_COUNT_10H(c,r))
-                ARFS_SAMPLE_H(c,r) = ARFS_COUNT_10H(c,r)
             else
                 ARFS_TB_10H(c,r) = -9999.0
             endif
+            
             if (ARFS_COUNT_10V(c,r) > 0) then
                 ARFS_TB_10V(c,r) = ARFS_TB_10V_SUM(c,r) / real(ARFS_COUNT_10V(c,r))
-                ARFS_SAMPLE_V(c,r) = ARFS_COUNT_10V(c,r)
             else
                 ARFS_TB_10V(c,r) = -9999.0
             endif
+            
             if (ARFS_COUNT_18H(c,r) > 0) then
                 ARFS_TB_18H(c,r) = ARFS_TB_18H_SUM(c,r) / real(ARFS_COUNT_18H(c,r))
             else
                 ARFS_TB_18H(c,r) = -9999.0
             endif
+            
             if (ARFS_COUNT_18V(c,r) > 0) then
                 ARFS_TB_18V(c,r) = ARFS_TB_18V_SUM(c,r) / real(ARFS_COUNT_18V(c,r))
             else
                 ARFS_TB_18V(c,r) = -9999.0
             endif
+            
             if (ARFS_COUNT_23H(c,r) > 0) then
                 ARFS_TB_23H(c,r) = ARFS_TB_23H_SUM(c,r) / real(ARFS_COUNT_23H(c,r))
             else
                 ARFS_TB_23H(c,r) = -9999.0
             endif
+            
             if (ARFS_COUNT_23V(c,r) > 0) then
                 ARFS_TB_23V(c,r) = ARFS_TB_23V_SUM(c,r) / real(ARFS_COUNT_23V(c,r))
             else
                 ARFS_TB_23V(c,r) = -9999.0
             endif
+            
             if (ARFS_COUNT_36H(c,r) > 0) then
                 ARFS_TB_36H(c,r) = ARFS_TB_36H_SUM(c,r) / real(ARFS_COUNT_36H(c,r))
             else
                 ARFS_TB_36H(c,r) = -9999.0
             endif
+            
             if (ARFS_COUNT_36V(c,r) > 0) then
                 ARFS_TB_36V(c,r) = ARFS_TB_36V_SUM(c,r) / real(ARFS_COUNT_36V(c,r))
             else
                 ARFS_TB_36V(c,r) = -9999.0
             endif
+            
             if (ARFS_COUNT_89H(c,r) > 0) then
                 ARFS_TB_89H(c,r) = ARFS_TB_89H_SUM(c,r) / real(ARFS_COUNT_89H(c,r))
             else
                 ARFS_TB_89H(c,r) = -9999.0
             endif
+            
             if (ARFS_COUNT_89V(c,r) > 0) then
                 ARFS_TB_89V(c,r) = ARFS_TB_89V_SUM(c,r) / real(ARFS_COUNT_89V(c,r))
             else
                 ARFS_TB_89V(c,r) = -9999.0
             endif
+            
             if (ARFS_COUNT_LAND(c,r) > 0) then
                 ARFS_LAND_FRAC(c,r) = ARFS_LAND_FRAC_SUM(c,r) / real(ARFS_COUNT_LAND(c,r))
             else
                 ARFS_LAND_FRAC(c,r) = -9999.0
             endif
             
-            ! Quality flag via majority voting on each bit
-            if (ARFS_COUNT_QF(c,r) > 0) then
+            ! Quality flag via majority voting
+            if (ARFS_QF_TOTALS(c,r) > 0) then
                 ARFS_QUALITY_FLAG(c,r) = 0
-                
-                ! Bits 0-2: Geophysical flags (based on ARFS_COUNT_QF)
-                
-                ! Set bit 0 (Ocean) if majority vote
-                if (ARFS_QUALITY_FLAG_SUM(c,r,1) > ARFS_COUNT_QF(c,r)/2.0) then
-                    ARFS_QUALITY_FLAG(c,r) = IOR(ARFS_QUALITY_FLAG(c,r), 1)
-                endif
-                
-                ! Set bit 1 (Precipitation) if majority vote
-                if (ARFS_QUALITY_FLAG_SUM(c,r,2) > ARFS_COUNT_QF(c,r)/2.0) then
-                    ARFS_QUALITY_FLAG(c,r) = IOR(ARFS_QUALITY_FLAG(c,r), 2)
-                endif
-                
-                ! Set bit 2 (Snow) if majority vote
-                if (ARFS_QUALITY_FLAG_SUM(c,r,3) > ARFS_COUNT_QF(c,r)/2.0) then
-                    ARFS_QUALITY_FLAG(c,r) = IOR(ARFS_QUALITY_FLAG(c,r), 4)
-                endif
-                
-                ! Bits 3-7: Band-specific sensor quality (based on per-band counts)
-                
-                ! Bit 3: 10 GHz sensor quality
-                if (ARFS_COUNT_10V(c,r) + ARFS_COUNT_10H(c,r) > 0) then
-                    if (sensor_10ghz_count(c,r) > (ARFS_COUNT_10V(c,r) + ARFS_COUNT_10H(c,r))/2.0) then
-                        ARFS_QUALITY_FLAG(c,r) = IOR(ARFS_QUALITY_FLAG(c,r), 8)
+                do i = 1, 8
+                    if (ARFS_QF_COUNTS(c,r,i) > ARFS_QF_TOTALS(c,r)/2) then
+                        ARFS_QUALITY_FLAG(c,r) = IOR(ARFS_QUALITY_FLAG(c,r), 2**(i-1))
                     endif
-                endif
-                
-                ! Bit 4: 18 GHz sensor quality
-                if (ARFS_COUNT_18V(c,r) + ARFS_COUNT_18H(c,r) > 0) then
-                    if (sensor_18ghz_count(c,r) > (ARFS_COUNT_18V(c,r) + ARFS_COUNT_18H(c,r))/2.0) then
-                        ARFS_QUALITY_FLAG(c,r) = IOR(ARFS_QUALITY_FLAG(c,r), 16)
-                    endif
-                endif
-                
-                ! Bit 5: 23 GHz sensor quality
-                if (ARFS_COUNT_23V(c,r) + ARFS_COUNT_23H(c,r) > 0) then
-                    if (sensor_23ghz_count(c,r) > (ARFS_COUNT_23V(c,r) + ARFS_COUNT_23H(c,r))/2.0) then
-                        ARFS_QUALITY_FLAG(c,r) = IOR(ARFS_QUALITY_FLAG(c,r), 32)
-                    endif
-                endif
-                
-                ! Bit 6: 36 GHz sensor quality
-                if (ARFS_COUNT_36V(c,r) + ARFS_COUNT_36H(c,r) > 0) then
-                    if (sensor_36ghz_count(c,r) > (ARFS_COUNT_36V(c,r) + ARFS_COUNT_36H(c,r))/2.0) then
-                        ARFS_QUALITY_FLAG(c,r) = IOR(ARFS_QUALITY_FLAG(c,r), 64)
-                    endif
-                endif
-                
-                ! Bit 7: 89 GHz sensor quality
-                if (ARFS_COUNT_89V(c,r) + ARFS_COUNT_89H(c,r) > 0) then
-                    if (sensor_89ghz_count(c,r) > (ARFS_COUNT_89V(c,r) + ARFS_COUNT_89H(c,r))/2.0) then
-                        ARFS_QUALITY_FLAG(c,r) = IOR(ARFS_QUALITY_FLAG(c,r), 128)
-                    endif
-                endif
-                
+                end do
             else
-                ARFS_QUALITY_FLAG(c,r) = -1  ! No data
+                ARFS_QUALITY_FLAG(c,r) = -1
             endif
         end do
-    end do
-    
-    ! Debug: Check quality flags after transpose
-    qf_bits = 0
-    do i = 1, nscans
-        do j = 1, nfovs
-            do k = 0, 7
-                if (IBITS(quality_flag_in(j,i), k, 1) == 1) qf_bits(k+1) = qf_bits(k+1) + 1
-            end do
-        end do
-    end do
-    
-    write(LDT_logunit,*)'[DEBUG] Quality flag bits after transpose:'
-    do k = 0, 7
-        write(LDT_logunit,*)'[DEBUG]   Bit', k, ':', qf_bits(k+1)
     end do
     
     ! =====================================================================
@@ -691,7 +492,6 @@ subroutine WSF_ARFS_RESAMPLE_HOURLY(hour_files, n_files, output_dir, &
     write(LDT_logunit,*)'[INFO] ========================================='
     write(LDT_logunit,*)'[INFO] Writing stitched hourly output'
     write(LDT_logunit,*)'[INFO] Output file: ', trim(output_filename)
-    write(LDT_logunit,*)'[INFO] ========================================='
     
     call LDT_WSF_ARFS_write_netcdf_hourly(2560, 1920, &
         ARFS_TB_10H, ARFS_TB_10V, ARFS_TB_18H, ARFS_TB_18V, &
@@ -707,25 +507,32 @@ subroutine WSF_ARFS_RESAMPLE_HOURLY(hour_files, n_files, output_dir, &
     write(LDT_logunit,*)'[INFO] Grid points with data:'
     write(LDT_logunit,*)'[INFO]   10H: ', count(ARFS_TB_10H > 0.0)
     write(LDT_logunit,*)'[INFO]   10V: ', count(ARFS_TB_10V > 0.0)
-    write(LDT_logunit,*)'[INFO] Max samples per pixel:'
-    write(LDT_logunit,*)'[INFO]   H-pol: ', maxval(ARFS_SAMPLE_H)
-    write(LDT_logunit,*)'[INFO]   V-pol: ', maxval(ARFS_SAMPLE_V)
+    write(LDT_logunit,*)'[INFO] Quality flag bits set:'
+    write(LDT_logunit,*)'[INFO]   Ocean (bit 0): ', count(IBITS(ARFS_QUALITY_FLAG, 0, 1) == 1)
+    write(LDT_logunit,*)'[INFO]   Precip (bit 1): ', count(IBITS(ARFS_QUALITY_FLAG, 1, 1) == 1)
+    write(LDT_logunit,*)'[INFO]   Snow (bit 2): ', count(IBITS(ARFS_QUALITY_FLAG, 2, 1) == 1)
+    write(LDT_logunit,*)'[INFO]   Bad 10GHz (bit 3): ', count(IBITS(ARFS_QUALITY_FLAG, 3, 1) == 1)
+    write(LDT_logunit,*)'[INFO]   Bad 18GHz (bit 4): ', count(IBITS(ARFS_QUALITY_FLAG, 4, 1) == 1)
+    write(LDT_logunit,*)'[INFO]   Bad 23GHz (bit 5): ', count(IBITS(ARFS_QUALITY_FLAG, 5, 1) == 1)
+    write(LDT_logunit,*)'[INFO]   Bad 36GHz (bit 6): ', count(IBITS(ARFS_QUALITY_FLAG, 6, 1) == 1)
+    write(LDT_logunit,*)'[INFO]   Bad 89GHz (bit 7): ', count(IBITS(ARFS_QUALITY_FLAG, 7, 1) == 1)
     write(LDT_logunit,*)'[INFO] ========================================='
     
     ! Cleanup
     deallocate(ARFS_LAT, ARFS_LON)
-    deallocate(ARFS_TIME_SUM, ARFS_TB_10H_SUM, ARFS_TB_10V_SUM)
+    deallocate(ARFS_TB_10H_SUM, ARFS_TB_10V_SUM)
     deallocate(ARFS_TB_18H_SUM, ARFS_TB_18V_SUM)
     deallocate(ARFS_TB_23H_SUM, ARFS_TB_23V_SUM)
     deallocate(ARFS_TB_36H_SUM, ARFS_TB_36V_SUM)
     deallocate(ARFS_TB_89H_SUM, ARFS_TB_89V_SUM)
     deallocate(ARFS_LAND_FRAC_SUM)
-    deallocate(ARFS_COUNT_TIME, ARFS_COUNT_10H, ARFS_COUNT_10V)
+    deallocate(ARFS_COUNT_10H, ARFS_COUNT_10V)
     deallocate(ARFS_COUNT_18H, ARFS_COUNT_18V)
     deallocate(ARFS_COUNT_23H, ARFS_COUNT_23V)
     deallocate(ARFS_COUNT_36H, ARFS_COUNT_36V)
     deallocate(ARFS_COUNT_89H, ARFS_COUNT_89V)
     deallocate(ARFS_COUNT_LAND)
+    deallocate(ARFS_QF_COUNTS, ARFS_QF_TOTALS)
     deallocate(TEMP_TIME, TEMP_TB_10H, TEMP_TB_10V)
     deallocate(TEMP_TB_18H, TEMP_TB_18V)
     deallocate(TEMP_TB_23H, TEMP_TB_23V)
@@ -739,13 +546,5 @@ subroutine WSF_ARFS_RESAMPLE_HOURLY(hour_files, n_files, output_dir, &
     deallocate(ARFS_TB_36H, ARFS_TB_36V)
     deallocate(ARFS_TB_89H, ARFS_TB_89V)
     deallocate(ARFS_LAND_FRAC, ARFS_QUALITY_FLAG)
-    deallocate(ARFS_SAMPLE_V, ARFS_SAMPLE_H)
-    deallocate(ARFS_COUNT_QF)
-    deallocate(ARFS_QUALITY_FLAG_SUM)
-    deallocate(sensor_10ghz_count)
-    deallocate(sensor_18ghz_count)
-    deallocate(sensor_23ghz_count)
-    deallocate(sensor_36ghz_count)
-    deallocate(sensor_89ghz_count)
 
 end subroutine WSF_ARFS_RESAMPLE_HOURLY
