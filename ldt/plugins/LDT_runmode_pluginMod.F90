@@ -96,9 +96,16 @@ contains
     external LDT_init_LISHydropreproc
     external LDT_run_LISHydropreproc
 
+    ! E.J: TODO: uncomment after fixing the relocation truncated error
     external LDT_init_smap_e_opl     !Y.Kwon
     external LDT_run_smap_e_opl      !Y.Kwon
 
+    external LDT_init_amsr_opl     !E.J
+    external LDT_run_amsr_opl      !E.J
+
+    external LDT_init_wsf_opl     !E.J
+    external LDT_run_wsf_opl      !E.J
+    
   ! Parameter Preprocessing:
     call registerldtinit(trim(LDT_LSMparamprocId)//char(0), &
          LDT_init_LSMparamproc)
@@ -187,13 +194,26 @@ contains
          LDT_init_LISHydropreproc)
     call registerldtrun(trim(LDT_LISHydropreprocId)//char(0), &
          LDT_run_LISHydropreproc)
-
+  
+  ! E.J: TODO: uncomment after fixing the relocation truncated error
   ! OPL E SMAP soil moisture retrieval  (Y.Kwon)
     call registerldtinit(trim(LDT_SMAP_E_OPLId)//char(0), &
          LDT_init_smap_e_opl)
     call registerldtrun(trim(LDT_SMAP_E_OPLId)//char(0), &
          LDT_run_smap_e_opl)
 
+  ! OPL AMSR soil moisture retrieval  (E.J)
+    call registerldtinit(trim(LDT_AMSR_OPLId)//char(0), &
+         LDT_init_amsr_opl)
+    call registerldtrun(trim(LDT_AMSR_OPLId)//char(0), &
+         LDT_run_amsr_opl)
+  
+  ! OPL WSF brightness temperature resampling (E.J)
+    call registerldtinit(trim(LDT_WSF_OPLId)//char(0), &
+         LDT_init_wsf_opl)
+    call registerldtrun(trim(LDT_WSF_OPLId)//char(0), &
+         LDT_run_wsf_opl)
+         
   end subroutine LDT_runmode_plugin
 
 end module LDT_runmode_pluginMod

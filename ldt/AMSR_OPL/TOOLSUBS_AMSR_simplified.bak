@@ -1,0 +1,513 @@
+SUBROUTINE get_amsr_l1r(filename, tb_time_seconds, &
+    tb_10v, tb_10h, tb_18v, tb_18h, &
+    tb_23v, tb_23h, tb_36v, tb_36h, &
+    tb_89v, tb_89h, &
+    lat, lon, lat89, lon89, &
+    land_water_frac, snow, precip, &
+    pixel_qual_flag, &
+    n, m, m89, n89, ierr)
+
+  ! Imports
+  use LDT_logMod, only: LDT_logunit, LDT_endrun
+
+  ! Arguments
+  character(*), intent(in) :: filename
+  real*8, allocatable, intent(out) :: tb_time_seconds(:)
+  real*4, allocatable, intent(out) :: tb_10v(:,:), tb_10h(:,:), tb_18v(:,:), tb_18h(:,:), tb_23v(:,:), tb_23h(:,:), tb_36v(:,:), &
+  tb_36h(:,:), tb_89v(:,:), tb_89h(:,:)
+  integer*4, allocatable, intent(out) :: land_water_frac(:,:)
+  real*4, allocatable, intent(out) :: lat89(:,:), lon89(:,:)
+  real*4, allocatable, intent(out) :: lat(:,:), lon(:,:)
+  integer*2, allocatable, intent(out) :: pixel_qual_flag(:,:)
+  integer, intent(out) :: m, n, m89, n89 ! m89 & n89 are for the 89GHz band for which lat and lon are provided
+  integer :: i, j 
+  integer, intent(out) :: ierr
+  
+  real :: sil, tt18  ! For intermediate calculations
+  integer*4, allocatable :: snow(:,:), precip(:,:)
+  
+#if (defined USE_HDF5)
+
+  ! Locals
+  character(100) :: dataset
+  integer(HID_T) :: file_id, dataset_id, dataspace_id, memspace_id
+  integer(HSIZE_T) :: dims(2), maxdims(2), dims_land_water(3)
+  integer :: rank
+  integer :: hdferr
+  logical :: exists, ishdf5, link_exists
+  integer(HSIZE_T) :: start(3), count(3)
+
+  ! Initialize output parameters
+  ierr = 0
+  m = 0
+  n = 0
+  m89 = 0
+  n89 = 0
+
+  ! Make sure file exists
+  inquire(file=trim(filename), exist=exists)
+  if (.not. exists) then
+     write(LDT_logunit,*)'[ERR] Cannot find file ', trim(filename)
+     ierr = 1
+     return
+  end if
+
+  ! Initialize HDF5
+  call h5open_f(hdferr)
+  if (hdferr == -1) then
+     write(LDT_logunit,*)'[ERR] Cannot initialize HDF5 Fortran interface!'
+     call h5close_f(hdferr)
+     ierr = 1
+     return
+  end if
+
+  ! Make sure the file is HDF5
+  call h5fis_hdf5_f(trim(filename), ishdf5, hdferr)
+  if (hdferr == -1) then
+     write(LDT_logunit,*)'[ERR] Problem checking if ', trim(filename), &
+          ' is HDF5'
+     call h5close_f(hdferr)
+     ierr = 1
+     return
+  end if
+  if (.not. ishdf5) then
+     write(LDT_logunit,*)'[ERR] File ', trim(filename), ' is not HDF5!'
+     call h5close_f(hdferr)
+     ierr = 1
+     return
+  end if
+
+  ! Open the file
+  call h5fopen_f(trim(filename), H5F_ACC_RDONLY_F, file_id, hdferr)
+  if (hdferr == -1) then
+     write(LDT_logunit,*)'[ERR] Cannot open ', trim(filename)
+     call h5close_f(hdferr)
+     ierr = 1
+     return
+  end if
+
+  ! Get dimensions for res10 data - use 10.7GHz horizontal polarization as reference
+  write(LDT_logunit,*)'[INFO] Getting dimensions for brightness temperature arrays'
+  dataset = "Brightness Temperature (res10,10.7GHz,H)"
+  call h5dopen_f(file_id, trim(dataset), dataset_id, hdferr)
+  if (hdferr /= 0) then
+      write(LDT_logunit,*)'[ERR] Cannot open dataset: ', trim(dataset)
+      call h5fclose_f(file_id, hdferr)
+      call h5close_f(hdferr)
+      ierr = 1
+      return
+  endif
+  
+  call h5dget_space_f(dataset_id, dataspace_id, hdferr)
+  if (hdferr /= 0) then
+      write(LDT_logunit,*)'[ERR] Cannot get dataspace for: ', trim(dataset)
+      call h5dclose_f(dataset_id, hdferr)
+      call h5fclose_f(file_id, hdferr)
+      call h5close_f(hdferr)
+      ierr = 1
+      return
+  endif
+  
+  call h5sget_simple_extent_dims_f(dataspace_id, dims, maxdims, hdferr)
+  if (hdferr < 0) then
+      write(LDT_logunit,*)'[ERR] Cannot get dimensions for: ', trim(dataset)
+      call h5sclose_f(dataspace_id, hdferr)
+      call h5dclose_f(dataset_id, hdferr)
+      call h5fclose_f(file_id, hdferr)
+      call h5close_f(hdferr)
+      ierr = 1
+      return
+  endif
+  
+  call h5sclose_f(dataspace_id, hdferr)
+  call h5dclose_f(dataset_id, hdferr)
+  
+  n = int(dims(1))
+  m = int(dims(2))
+  write(LDT_logunit,*)'[INFO] Brightness temperature dimensions:', n, 'x', m
+  
+  ! Get dimensions for 89A data
+  dataset = "Latitude of Observation Point for 89A"
+  call h5dopen_f(file_id, trim(dataset), dataset_id, hdferr)
+  if (hdferr /= 0) then
+      write(LDT_logunit,*)'[ERR] Cannot open dataset: ', trim(dataset)
+      call h5fclose_f(file_id, hdferr)
+      call h5close_f(hdferr)
+      ierr = 1
+      return
+  endif
+  
+  call h5dget_space_f(dataset_id, dataspace_id, hdferr)
+  call h5sget_simple_extent_dims_f(dataspace_id, dims, maxdims, hdferr)
+  call h5sclose_f(dataspace_id, hdferr)
+  call h5dclose_f(dataset_id, hdferr)
+  
+  n89 = int(dims(1))
+  m89 = int(dims(2))
+  write(LDT_logunit,*)'[INFO] 89GHz lat/lon dimensions:', n89, 'x', m89
+  
+  ! Allocate all arrays with the dimensions we just detected
+  if (.not. allocated(tb_time_seconds)) allocate(tb_time_seconds(m))
+  
+  if (.not. allocated(lat89)) allocate(lat89(n89, m89))
+  if (.not. allocated(lon89)) allocate(lon89(n89, m89))
+  
+  if (.not. allocated(lat)) allocate(lat(n, m))
+  if (.not. allocated(lon)) allocate(lon(n, m))
+  
+  if (.not. allocated(tb_10v)) allocate(tb_10v(n, m))
+  if (.not. allocated(tb_10h)) allocate(tb_10h(n, m))
+  if (.not. allocated(tb_18v)) allocate(tb_18v(n, m))
+  if (.not. allocated(tb_18h)) allocate(tb_18h(n, m))
+  if (.not. allocated(tb_23v)) allocate(tb_23v(n, m))
+  if (.not. allocated(tb_23h)) allocate(tb_23h(n, m))
+  if (.not. allocated(tb_36v)) allocate(tb_36v(n, m))
+  if (.not. allocated(tb_36h)) allocate(tb_36h(n, m))
+  if (.not. allocated(tb_89v)) allocate(tb_89v(n, m))
+  if (.not. allocated(tb_89h)) allocate(tb_89h(n, m))
+  
+  if (.not. allocated(snow)) allocate(snow(n, m))
+  if (.not. allocated(precip)) allocate(precip(n, m))
+  if (.not. allocated(land_water_frac)) allocate(land_water_frac(n, m))
+  if (.not. allocated(pixel_qual_flag)) allocate(pixel_qual_flag(n, m))
+  
+  ! Initialize all arrays
+  tb_time_seconds = 0.0
+  lat89 = 0.0
+  lon89 = 0.0
+  lat = 0.0
+  lon = 0.0
+  tb_10v = 0.0
+  tb_10h = 0.0
+  tb_18v = 0.0
+  tb_18h = 0.0
+  tb_23v = 0.0
+  tb_23h = 0.0
+  tb_36v = 0.0
+  tb_36h = 0.0
+  tb_89v = 0.0
+  tb_89h = 0.0
+  snow = 0
+  precip = 0
+  land_water_frac = 0
+  pixel_qual_flag = 0
+  
+  ! Get the data - first time
+  dataset = "Scan Time"
+  write(LDT_logunit,*)'[INFO] Reading: ', trim(dataset)
+  call h5dopen_f(file_id, trim(dataset), dataset_id, hdferr)
+  if (hdferr == 0) then
+      call h5dget_space_f(dataset_id, dataspace_id, hdferr)
+      call h5dread_f(dataset_id, H5T_NATIVE_DOUBLE, tb_time_seconds, dims, hdferr)
+      call h5sclose_f(dataspace_id, hdferr)
+      call h5dclose_f(dataset_id, hdferr)
+  else
+      write(LDT_logunit,*)'[WARN] Could not read: ', trim(dataset)
+  endif
+  
+  ! Read lat/lon for 89GHz channels
+  dataset = "Latitude of Observation Point for 89A"
+  write(LDT_logunit,*)'[INFO] Reading: ', trim(dataset)
+  call h5dopen_f(file_id, trim(dataset), dataset_id, hdferr)
+  if (hdferr == 0) then
+      call h5dget_space_f(dataset_id, dataspace_id, hdferr)
+      call h5dread_f(dataset_id, H5T_NATIVE_REAL, lat89, dims, hdferr)
+      call h5sclose_f(dataspace_id, hdferr)
+      call h5dclose_f(dataset_id, hdferr)
+  else
+      write(LDT_logunit,*)'[WARN] Could not read: ', trim(dataset)
+  endif
+  
+  dataset = "Longitude of Observation Point for 89A"
+  write(LDT_logunit,*)'[INFO] Reading: ', trim(dataset)
+  call h5dopen_f(file_id, trim(dataset), dataset_id, hdferr)
+  if (hdferr == 0) then
+      call h5dget_space_f(dataset_id, dataspace_id, hdferr)
+      call h5dread_f(dataset_id, H5T_NATIVE_REAL, lon89, dims, hdferr)
+      call h5sclose_f(dataspace_id, hdferr)
+      call h5dclose_f(dataset_id, hdferr)
+  else
+      write(LDT_logunit,*)'[WARN] Could not read: ', trim(dataset)
+  endif
+  
+  ! Resample lat/lon
+  write(LDT_logunit,*)'[INFO] Resampling lat/lon grid'
+  call my_zoom_2d(lat89, n89, m89, lat, n, m)
+  call my_zoom_2d(lon89, n89, m89, lon, n, m)
+  
+  ! Read all brightness temperature channels with safer approach
+  write(LDT_logunit,*)'[INFO] Reading brightness temperature datasets'
+  
+  ! Helper function to safely read a dataset
+  call read_tb_dataset("Brightness Temperature (res10,10.7GHz,H)", tb_10h)
+  call read_tb_dataset("Brightness Temperature (res10,10.7GHz,V)", tb_10v)
+  call read_tb_dataset("Brightness Temperature (res10,18.7GHz,H)", tb_18h)
+  call read_tb_dataset("Brightness Temperature (res10,18.7GHz,V)", tb_18v)
+  call read_tb_dataset("Brightness Temperature (res10,23.8GHz,H)", tb_23h)
+  call read_tb_dataset("Brightness Temperature (res10,23.8GHz,V)", tb_23v)
+  call read_tb_dataset("Brightness Temperature (res10,36.5GHz,H)", tb_36h)
+  call read_tb_dataset("Brightness Temperature (res10,36.5GHz,V)", tb_36v)
+  call read_tb_dataset("Brightness Temperature (res10,89.0GHz,H)", tb_89h)
+  call read_tb_dataset("Brightness Temperature (res10,89.0GHz,V)", tb_89v)
+  
+  ! Special handling for Land_Ocean Flag (3D dataset) - with much safer approach
+  dataset = "Land_Ocean Flag 6 to 36"
+  write(LDT_logunit,*)'[INFO] Reading 3D dataset: ', trim(dataset)
+  call h5dopen_f(file_id, trim(dataset), dataset_id, hdferr)
+  if (hdferr == 0) then
+      ! Get the dataset dimensions
+      call h5dget_space_f(dataset_id, dataspace_id, hdferr)
+      if (hdferr /= 0) then
+          write(LDT_logunit,*)'[WARN] Cannot get dataspace for: ', trim(dataset)
+          call h5dclose_f(dataset_id, hdferr)
+      else
+          call h5sget_simple_extent_ndims_f(dataspace_id, rank, hdferr)
+          if (hdferr /= 0 .or. rank < 3) then
+              write(LDT_logunit,*)'[WARN] Incorrect rank for: ', trim(dataset), ', rank=', rank
+              call h5sclose_f(dataspace_id, hdferr)
+              call h5dclose_f(dataset_id, hdferr)
+          else
+              call h5sget_simple_extent_dims_f(dataspace_id, dims_land_water(1:rank), maxdims, hdferr)
+              if (hdferr /= 0) then
+                  write(LDT_logunit,*)'[WARN] Cannot get dimensions for: ', trim(dataset)
+                  call h5sclose_f(dataspace_id, hdferr)
+                  call h5dclose_f(dataset_id, hdferr)
+              else
+                  write(LDT_logunit,*)'[INFO] Land_Ocean flag dimensions:', &
+                      dims_land_water(1), 'x', dims_land_water(2), 'x', dims_land_water(3)
+                  
+                  ! Only proceed if dimensions match our expected shape
+                  if (dims_land_water(1) /= n .or. dims_land_water(2) /= m) then
+                      write(LDT_logunit,*)'[WARN] Land_Ocean flag dimensions mismatch:', &
+                          dims_land_water(1), 'x', dims_land_water(2), ', expected:', n, 'x', m
+                      call h5sclose_f(dataspace_id, hdferr)
+                      call h5dclose_f(dataset_id, hdferr)
+                  else
+                      ! Define hyperslab to get layer 4 (36 GHz channel)
+                      start(1) = 0
+                      start(2) = 0
+                      start(3) = 3  ! Starting at layer 4 (0-indexed)
+                      count(1) = int(dims_land_water(1))
+                      count(2) = int(dims_land_water(2))
+                      count(3) = 1  ! Read one slice in the third dimension
+                      
+                      ! Select hyperslab in file space
+                      call h5sselect_hyperslab_f(dataspace_id, H5S_SELECT_SET_F, start, count, hdferr)
+                      if (hdferr /= 0) then
+                          write(LDT_logunit,*)'[WARN] Cannot select hyperslab for: ', trim(dataset)
+                          call h5sclose_f(dataspace_id, hdferr)
+                          call h5dclose_f(dataset_id, hdferr)
+                      else
+                          ! Create memory space dimensions
+                          dims(1) = dims_land_water(1)
+                          dims(2) = dims_land_water(2)
+                          
+                          ! Create memory space for reading
+                          call h5screate_simple_f(2, dims, memspace_id, hdferr)
+                          if (hdferr /= 0) then
+                              write(LDT_logunit,*)'[WARN] Cannot create memory space for: ', trim(dataset)
+                              call h5sclose_f(dataspace_id, hdferr)
+                              call h5dclose_f(dataset_id, hdferr)
+                          else
+                              ! Read the selected layer
+                              write(LDT_logunit,*)'[INFO] Reading Land_Ocean flag data'
+                              call h5dread_f(dataset_id, H5T_NATIVE_INTEGER, land_water_frac, dims, hdferr, &
+                                          memspace_id, dataspace_id)
+                              if (hdferr /= 0) then
+                                  write(LDT_logunit,*)'[WARN] Cannot read data for: ', trim(dataset)
+                              else
+                                  write(LDT_logunit,*)'[INFO] Successfully read Land_Ocean flag data'
+                              endif
+                              
+                              ! Close memory space
+                              call h5sclose_f(memspace_id, hdferr)
+                          endif
+                      endif
+                  endif
+              endif
+          endif
+          
+          ! Close dataspace
+          call h5sclose_f(dataspace_id, hdferr)
+      endif
+      
+      ! Close dataset
+      call h5dclose_f(dataset_id, hdferr)
+  else
+      write(LDT_logunit,*)'[WARN] Could not open dataset: ', trim(dataset)
+  endif
+  
+  ! Use a simpler approach for pixel quality flags
+  dataset = "Pixel Data Quality 6 to 36"
+  write(LDT_logunit,*)'[INFO] Reading: ', trim(dataset)
+  call read_tb_dataset(dataset, pixel_qual_flag)
+  
+  ! Compute snow and precipitation flags
+  do j = 1, m
+     do i = 1, n
+        if (land_water_frac(i,j) >= 50) then
+           if (tb_18v(i,j) > 0 .and. tb_18h(i,j) > 0 .and. &
+               tb_23v(i,j) > 0 .and. tb_89v(i,j) > 0 .and. &
+               tb_36v(i,j) > 0) then
+              
+              sil = 451.88 - 0.44*tb_18v(i,j) - 1.775*tb_23v(i,j) + &
+                    0.00574*tb_23v(i,j)**2 - tb_89v(i,j)
+              tt18 = tb_18v(i,j) - tb_18h(i,j)
+              
+              if (sil > 10) then
+                 if ((tb_23v(i,j) <= 264.0) .and. &
+                     (tb_23v(i,j) <= (175.0 + 0.49*tb_89v(i,j)))) then
+                    snow(i,j) = 1
+                    if ((tt18 >= 18) .and. &
+                        ((tb_18v(i,j) - tb_36v(i,j)) <= 10) .and. &
+                        ((tb_36v(i,j) - tb_89v(i,j)) <= 10)) then
+                       snow(i,j) = 0
+                    endif
+                    if ((tt18 >= 8) .and. &
+                        ((tb_18v(i,j) - tb_36v(i,j)) <= 2) .and. &
+                        ((tb_23v(i,j) - tb_89v(i,j)) <= 6)) then
+                       snow(i,j) = 1
+                    endif
+                 else
+                    snow(i,j) = 0
+                    precip(i,j) = 1
+                    if (tt18 > 20) then
+                       precip(i,j) = 0
+                    endif
+                    if ((tb_89v(i,j) > 253) .and. (tt18 > 7)) then
+                       precip(i,j) = 0
+                    endif
+                 endif
+              endif
+           endif
+        endif
+     end do
+  end do
+  
+  ! Clean up
+  call h5fclose_f(file_id, hdferr)
+  call h5close_f(hdferr)
+  
+  ! Check array dimensions for debugging
+  write(LDT_logunit,*)'[INFO] Final array dimensions:'
+  write(LDT_logunit,*)'  lat: ', size(lat,1), 'x', size(lat,2)
+  write(LDT_logunit,*)'  tb_10h: ', size(tb_10h,1), 'x', size(tb_10h,2)
+  
+  ierr = 0
+  return
+
+  CONTAINS
+  
+  ! Helper subroutine to safely read a 2D dataset
+  subroutine read_tb_dataset(dataset_name, output_array)
+      character(*), intent(in) :: dataset_name
+      real*4, intent(inout) :: output_array(:,:)
+      
+      integer :: local_hdferr
+      integer(HID_T) :: local_dataset_id, local_dataspace_id
+      integer(HSIZE_T) :: local_dims(2), local_maxdims(2)
+      
+      write(LDT_logunit,*)'[INFO] Reading dataset: ', trim(dataset_name)
+      
+      ! Open the dataset
+      call h5dopen_f(file_id, trim(dataset_name), local_dataset_id, local_hdferr)
+      if (local_hdferr /= 0) then
+          write(LDT_logunit,*)'[WARN] Cannot open dataset: ', trim(dataset_name)
+          return
+      endif
+      
+      ! Get the dataspace
+      call h5dget_space_f(local_dataset_id, local_dataspace_id, local_hdferr)
+      if (local_hdferr /= 0) then
+          write(LDT_logunit,*)'[WARN] Cannot get dataspace for: ', trim(dataset_name)
+          call h5dclose_f(local_dataset_id, local_hdferr)
+          return
+      endif
+      
+      ! Get dimensions
+      call h5sget_simple_extent_dims_f(local_dataspace_id, local_dims, local_maxdims, local_hdferr)
+      if (local_hdferr /= 0) then
+          write(LDT_logunit,*)'[WARN] Cannot get dimensions for: ', trim(dataset_name)
+          call h5sclose_f(local_dataspace_id, local_hdferr)
+          call h5dclose_f(local_dataset_id, local_hdferr)
+          return
+      endif
+      
+      ! Verify that dimensions match
+      if (local_dims(1) /= size(output_array, 1) .or. local_dims(2) /= size(output_array, 2)) then
+          write(LDT_logunit,*)'[WARN] Dimension mismatch for: ', trim(dataset_name)
+          write(LDT_logunit,*)'[WARN] Expected: ', size(output_array,1), 'x', size(output_array,2), &
+                             ', Found: ', local_dims(1), 'x', local_dims(2)
+          call h5sclose_f(local_dataspace_id, local_hdferr)
+          call h5dclose_f(local_dataset_id, local_hdferr)
+          return
+      endif
+      
+      ! Read the dataset
+      call h5dread_f(local_dataset_id, H5T_NATIVE_REAL, output_array, local_dims, local_hdferr)
+      if (local_hdferr /= 0) then
+          write(LDT_logunit,*)'[WARN] Cannot read data for: ', trim(dataset_name)
+      else
+          write(LDT_logunit,*)'[INFO] Successfully read: ', trim(dataset_name)
+      endif
+      
+      ! Clean up
+      call h5sclose_f(local_dataspace_id, local_hdferr)
+      call h5dclose_f(local_dataset_id, local_hdferr)
+  end subroutine read_tb_dataset
+  
+  ! Helper subroutine to resample lat/lon grids
+  subroutine my_zoom_2d(input, nx_in, ny_in, output, nx_out, ny_out) 
+     implicit none
+     integer, intent(in) :: nx_in, ny_in, nx_out, ny_out
+     real*4, intent(in) :: input(nx_in, ny_in)
+     real*4, intent(out) :: output(nx_out, ny_out)
+     
+     real :: x_scale, y_scale, x, y
+     integer :: i, j, x1, x2, y1, y2
+     real :: dx, dy
+     real :: c11, c12, c21, c22
+     real :: f1, f2
+     
+     ! Compute scaling factors
+     x_scale = real(nx_in - 1) / real(nx_out - 1)
+     y_scale = real(ny_in - 1) / real(ny_out - 1)
+     
+     do j = 1, ny_out
+         do i = 1, nx_out
+             ! Get input coordinates
+             x = 1.0 + (i-1) * x_scale
+             y = 1.0 + (j-1) * y_scale
+             
+             ! Get surrounding points with bounds checking
+             x1 = max(1, min(int(x), nx_in))
+             x2 = max(1, min(x1 + 1, nx_in))
+             y1 = max(1, min(int(y), ny_in))
+             y2 = max(1, min(y1 + 1, ny_in))
+             
+             ! Get interpolation weights
+             dx = max(0.0, min(1.0, x - x1))
+             dy = max(0.0, min(1.0, y - y1))
+             
+             ! Get corner values
+             c11 = input(x1, y1)
+             c12 = input(x1, y2)
+             c21 = input(x2, y1)
+             c22 = input(x2, y2)
+             
+             ! Bilinear interpolation
+             f1 = (1.0-dx)*c11 + dx*c21
+             f2 = (1.0-dx)*c12 + dx*c22
+             output(i,j) = (1.0-dy)*f1 + dy*f2
+         end do
+     end do
+  end subroutine my_zoom_2d
+
+#else
+  ! Dummy version if LDT was compiled w/o HDF5 support.
+  write(LDT_logunit,*) '[ERR] get_amsr_l1r called without HDF5 support!'
+  write(LDT_logunit,*) '[ERR] Recompile LDT with HDF5 support and try again!'
+  call LDT_endrun()
+#endif
+
+END SUBROUTINE get_amsr_l1r
