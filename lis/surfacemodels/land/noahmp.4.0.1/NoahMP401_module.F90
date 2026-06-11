@@ -358,7 +358,7 @@ module NoahMP401_module
     implicit none
 
     INTEGER, PRIVATE, PARAMETER :: MBAND = 2
-    INTEGER, PRIVATE, PARAMETER :: NSOIL = 4
+    INTEGER, PRIVATE, PARAMETER :: NSOIL = 6
     INTEGER, PRIVATE, PARAMETER :: NSTAGE = 8
 
     type, public :: noahmp401dec

@@ -63,7 +63,7 @@ subroutine NoahMP401_setup()
     integer           :: t, k, n
     integer           :: col, row
     real, allocatable :: placeholder(:,:)
-    integer       :: soilcolor, vegtyp, soiltyp(4), slopetyp, croptype    
+    integer       :: soilcolor, vegtyp, soiltyp(6), slopetyp, croptype    
     mtype = LIS_rc%lsm_index
     
     do n=1, LIS_rc%nnest
@@ -392,7 +392,7 @@ SUBROUTINE TRANSFER_MP_PARAMETERS(VEGTYPE,SOILTYPE,SLOPETYPE,SOILCOLOR,CROPTYPE,
   implicit none
 
   INTEGER, INTENT(IN)    :: VEGTYPE
-  INTEGER, INTENT(IN)    :: SOILTYPE(4)
+  INTEGER, INTENT(IN)    :: SOILTYPE(6)
   INTEGER, INTENT(IN)    :: SLOPETYPE
   INTEGER, INTENT(IN)    :: SOILCOLOR
   INTEGER, INTENT(IN)    :: CROPTYPE
