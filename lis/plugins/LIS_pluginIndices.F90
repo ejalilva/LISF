@@ -151,6 +151,7 @@ module LIS_pluginIndices
         "NLDAS2 grib"
    character*50, public,  parameter :: LIS_nldas20Id         = &
         "NLDAS2 netcdf"
+   character*50, public,  parameter :: LIS_nldas30Id         = "NLDAS-3"
    character*50, public,  parameter :: LIS_gldasId           = "GLDAS"
    character*50, public,  parameter :: LIS_gfsId             = "GFS"
    character*50, public,  parameter :: LIS_merra2Id          = "MERRA2"
