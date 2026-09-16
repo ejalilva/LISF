@@ -53,6 +53,7 @@ module LDT_pluginIndices
    character*50, public,  parameter :: LDT_LISHydropreprocId  = "LISHydro preprocessing for WRFHydro"
    character*50, public,  parameter :: LDT_SMAP_E_OPLId       = "OPL E SMAP soil moisture retrieval"
    character*50, public,  parameter :: LDT_WSF_OPLId       = "OPL WSF brightness temperature resampling"
+   character*50, public,  parameter :: LDT_AMSR3_OPLId     = "OPL AMSR3 brightness temperature resampling"
 
 !-------------------------------------------------------------------------
 ! Domains

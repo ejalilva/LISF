@@ -31,6 +31,7 @@ Not all options described here are available in the public version of LDT.
 |"`LISHydro preprocessing for WRFHydro`" |Preprocessing Option for WRFHydro
 |"`OPL E SMAP soil moisture retrieval`" |Operational 9-km enhanced SMAP soil moisture retrieval
 |"`OPL WSF brightness temperature resampling`" |Operational WSF-M (Weather Satellite Follow-on) brightness temperature resampling to the model grid
+|"`OPL AMSR3 brightness temperature resampling`" |Operational AMSR3 (GOSAT-GW) L1R brightness temperature resampling to the model grid
 |===
 
 .Example _ldt.config_ entry
@@ -5437,12 +5438,80 @@ WSF output directory:                   /path/to/WSF_TB_resampled_hourly/202506
 WSF filelist suffix number:             1
 ....
 
+=== AMSR3 OPL brightness temperature resampling
 
+This section describes the configuration options for the
+"`OPL AMSR3 brightness temperature resampling`" running mode, which resamples
+JAXA AMSR3 (GOSAT-GW) Level-1R brightness temperature granules
+(`GGWAM3_*_L1RTBR*.nc`) to the 10-km global ARFS grid. All 14 channels
+(6.9, 7.3, 10.65, 18.7, 23.8, 36.5 and 89 GHz, V and H) are read at their
+native field of view and written per channel with per-channel quality layers.
+Each full-orbit granule is split into an ascending and a descending pass, and
+one output file is written per pass
+(`AMSR3_L1R_resampled_<YYYYMMDDHHMM>_<A|D>.nc`). The internal file list is
+keyed on the valid date (`AMSR3_L1R_filelist_<YYYYMMDDHH>.dat`), so
+concurrent LDT jobs in one working directory do not conflict.
 
+`AMSR3_OPL valid date (YYYYMMDDHH):` specifies the date (UTC) whose granules
+are processed. All granules of that day are resampled.
 
+.Example _ldt.config_ entry
+....
+AMSR3_OPL valid date (YYYYMMDDHH):   2026082200
+....
 
+`AMSR3_OPL L1R data directory:` specifies the directory containing the AMSR3
+L1R NetCDF granules for the date to be processed.
 
+.Example _ldt.config_ entry
+....
+AMSR3_OPL L1R data directory:   /path/to/AMSR-3_L1R/2026/234
+....
 
+`AMSR3_OPL resampled output directory:` specifies the directory under which a
+`<YYYYMMDD>` subdirectory is created for the resampled output files.
 
+.Example _ldt.config_ entry
+....
+AMSR3_OPL resampled output directory:   /path/to/AMSR3_TB_resampled
+....
 
+`AMSR3_OPL write resampled output:` (optional, default 1) selects whether the
+resampled fields are written to NetCDF (1) or only computed (0).
 
+.Example _ldt.config_ entry
+....
+AMSR3_OPL write resampled output:   1
+....
+
+`AMSR3_OPL filter snow and precip footprints:` (optional, default 1) drops
+footprints flagged as snow or precipitation from the brightness temperature
+average when set to 1 (soil moisture use). Set to 0 to keep them (snow
+products); the weighted snow and precipitation fractions are written either way.
+
+.Example _ldt.config_ entry
+....
+AMSR3_OPL filter snow and precip footprints:   1
+....
+
+`AMSR3_OPL search radius km by band:` (optional, default `20.0 15.0 10.0`)
+gives the inverse-distance search radius, in km, for the three frequency
+bands: 11 GHz and below, 11 to 30 GHz, and above 30 GHz. Smaller radii keep
+more of the native resolution of the finer channels.
+
+.Example _ldt.config_ entry
+....
+AMSR3_OPL search radius km by band:   20.0 15.0 10.0
+....
+
+.Full example _ldt.config_ block for AMSR3 OPL resampling
+....
+LDT running mode:              "OPL AMSR3 brightness temperature resampling"
+
+AMSR3_OPL valid date (YYYYMMDDHH):             2026082200
+AMSR3_OPL L1R data directory:                  /path/to/AMSR-3_L1R/2026/234
+AMSR3_OPL resampled output directory:          /path/to/AMSR3_TB_resampled
+AMSR3_OPL write resampled output:              1
+AMSR3_OPL filter snow and precip footprints:   1
+AMSR3_OPL search radius km by band:            20.0 15.0 10.0
+....
