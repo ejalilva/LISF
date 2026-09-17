@@ -136,7 +136,8 @@ CONTAINS
 
     do k = 1, nchan                                              ! four layers per channel
        vtb(k)  = def2d('TB_'  //chtag(ch_name(k)), NF90_FLOAT, 'K',  'brightness temperature, '//trim(ch_name(k)))
-       vrfi(k) = def2d('FRFI_'//chtag(ch_name(k)), NF90_FLOAT, '1',  'weighted share of footprints with RFI occurred')
+       vrfi(k) = -1                                              ! RFI bits exist only at <= 11 GHz (C / X band)
+       if (ch_freq(k) <= 11.0) vrfi(k) = def2d('FRFI_'//chtag(ch_name(k)), NF90_FLOAT, '1', 'weighted share of footprints with RFI occurred')
        vcau(k) = def2d('FCAU_'//chtag(ch_name(k)), NF90_FLOAT, '1',  'weighted share of footprints with resampling caution')
        vqor(k) = def2d('QOR_' //chtag(ch_name(k)), NF90_SHORT, '1',  'bitwise OR of contributing L1R quality bytes')
     end do
@@ -144,7 +145,10 @@ CONTAINS
     vsnow = def2d('FSNOW',     NF90_FLOAT, '1', 'weighted share of footprints flagged snow')
     vprec = def2d('FPRECIP',   NF90_FLOAT, '1', 'weighted share of footprints flagged precipitation')
     vns   = def2d('NSAMP',     NF90_INT,   '1', 'footprints within the largest search radius')
-    vstim = def2d('SCAN_TIME', NF90_DOUBLE,'seconds since 1993-01-01 00:00:00 (TAI)', 'weighted mean scan time')
+    vstim = def2d('SCAN_TIME', NF90_DOUBLE, 'seconds', 'weighted mean scan time, TAI93')
+    ! not a CF "since" string on purpose: TAI93 is not UTC, and a "since" units attribute
+    ! makes xarray/CF readers decode it as a calendar time (and fail on the TAI suffix)
+    call LDT_verify(nf90_put_att(ncid, vstim, 'time_reference', '1993-01-01T00:00:00 TAI (TAI93, leap seconds not applied)'), 'att SCAN_TIME ref')
     call LDT_verify(nf90_put_att(ncid, NF90_GLOBAL, 'source_file', trim(basename)), 'att source')
     call LDT_verify(nf90_put_att(ncid, NF90_GLOBAL, 'orbit_pass',  pass), 'att pass')
     call LDT_verify(nf90_put_att(ncid, NF90_GLOBAL, 'search_radius_km_by_band', radius_by_band), 'att radius')
@@ -168,7 +172,7 @@ CONTAINS
 
     do k = 1, nchan
        call LDT_verify(nf90_put_var(ncid, vtb(k),  arfs_tb(:,:,k)),   'put TB')
-       call LDT_verify(nf90_put_var(ncid, vrfi(k), arfs_frfi(:,:,k)), 'put FRFI')
+       if (vrfi(k) > 0) call LDT_verify(nf90_put_var(ncid, vrfi(k), arfs_frfi(:,:,k)), 'put FRFI')
        call LDT_verify(nf90_put_var(ncid, vcau(k), arfs_fcau(:,:,k)), 'put FCAU')
        call LDT_verify(nf90_put_var(ncid, vqor(k), arfs_qor(:,:,k)),  'put QOR')
     end do

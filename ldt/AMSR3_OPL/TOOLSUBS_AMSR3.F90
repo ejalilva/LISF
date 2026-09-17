@@ -160,11 +160,11 @@ CONTAINS
       ! uint16 * 0.01; 65534 (missing) and 65535 (parity) -> -9999. Read into
       ! int32 so unsigned values above 32767 do not wrap negative.
       logical function rd_tb(name, out2d)
-        character(*), intent(in) :: name ; real*4, intent(out) :: out2d(nfov,nscan)
+        character(*), intent(in) :: name ; real*4, intent(out) :: out2d(:,:)
         integer :: vid ; integer*4, allocatable :: raw(:,:)
         rd_tb = .false.
         if (.not. ok(nf90_inq_varid(ncid, name, vid), name)) return
-        allocate(raw(nfov,nscan))
+        allocate(raw(size(out2d,1),size(out2d,2)))
         if (.not. ok(nf90_get_var(ncid, vid, raw), name)) return
         where (raw >= 65534) ; out2d = -9999.0 ; elsewhere ; out2d = real(raw)*0.01 ; end where
         deallocate(raw) ; rd_tb = .true.
@@ -172,7 +172,7 @@ CONTAINS
 
       ! quality byte: read uint8 into int16 (values reach 128/255, past int8 range)
       logical function rd_q(name, out2d)
-        character(*), intent(in) :: name ; integer*2, intent(out) :: out2d(nfov,nscan)
+        character(*), intent(in) :: name ; integer*2, intent(out) :: out2d(:,:)
         integer :: vid ; rd_q = .false.
         if (.not. ok(nf90_inq_varid(ncid, name, vid), name)) return
         if (.not. ok(nf90_get_var(ncid, vid, out2d), name)) return
@@ -180,7 +180,7 @@ CONTAINS
       end function rd_q
 
       logical function rd_q1d(name, out1d)      ! per-scan uint8 quality -> int16
-        character(*), intent(in) :: name ; integer*2, intent(out) :: out1d(nscan)
+        character(*), intent(in) :: name ; integer*2, intent(out) :: out1d(:)
         integer :: vid ; rd_q1d = .false.
         if (.not. ok(nf90_inq_varid(ncid, name, vid), name)) return
         if (.not. ok(nf90_get_var(ncid, vid, out1d), name)) return
@@ -188,7 +188,7 @@ CONTAINS
       end function rd_q1d
 
       logical function rd_int(name, out2d)      ! uint8 land percent -> int32
-        character(*), intent(in) :: name ; integer*4, intent(out) :: out2d(nfov,nscan)
+        character(*), intent(in) :: name ; integer*4, intent(out) :: out2d(:,:)
         integer :: vid ; rd_int = .false.
         if (.not. ok(nf90_inq_varid(ncid, name, vid), name)) return
         if (.not. ok(nf90_get_var(ncid, vid, out2d), name)) return
@@ -196,7 +196,7 @@ CONTAINS
       end function rd_int
 
       logical function rd_real(name, out2d)     ! float32 lat/lon, fill -9999
-        character(*), intent(in) :: name ; real*4, intent(out) :: out2d(nfov,nscan)
+        character(*), intent(in) :: name ; real*4, intent(out) :: out2d(:,:)
         integer :: vid ; rd_real = .false.
         if (.not. ok(nf90_inq_varid(ncid, name, vid), name)) return
         if (.not. ok(nf90_get_var(ncid, vid, out2d), name)) return
@@ -205,7 +205,7 @@ CONTAINS
       end function rd_real
 
       logical function rd_time(out1d)           ! float64 seconds since 1993-01-01 (TAI)
-        real*8, intent(out) :: out1d(nscan) ; integer :: vid ; rd_time = .false.
+        real*8, intent(out) :: out1d(:) ; integer :: vid ; rd_time = .false.
         if (.not. ok(nf90_inq_varid(ncid,'ScanTimeTAI93',vid),'ScanTimeTAI93')) return
         if (.not. ok(nf90_get_var(ncid, vid, out1d),'ScanTimeTAI93')) return
         rd_time = .true.
