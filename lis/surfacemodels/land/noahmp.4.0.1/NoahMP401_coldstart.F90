@@ -65,7 +65,7 @@ subroutine NoahMP401_coldstart(mtype)
     LOGICAL ::     restart,          &
          &         allowed_to_read
 
-    real, dimension(4) ::     DZS  ! Thickness of the soil layers [m]
+    real, dimension(6) ::     DZS  ! Thickness of the soil layers [m]
     real ::     dx, dy
     real, dimension( 1, 1 ) :: msftx, msfty
     real :: wtddt, dtbl
@@ -80,7 +80,7 @@ subroutine NoahMP401_coldstart(mtype)
          &                           ISLTYP,        &  ! soil type
                                      IVGTYP            ! vegetation type
 
-    real,    dimension( 1, 4, 1 ) ::            &
+    real,    dimension( 1, 6, 1 ) ::            &
          &                            tslb_3d,      &  ! soil temperature [K]
          &                           smois_3d,      &  ! volumetric soil moisture [m3/m3]
          &                            sh2o_3d          ! volumetric liquid soil moisture [m3/m3]

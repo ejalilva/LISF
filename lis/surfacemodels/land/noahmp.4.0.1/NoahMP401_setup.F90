@@ -259,7 +259,7 @@ subroutine NoahMP401_setup()
            CROPTYPE = 0 
            CALL TRANSFER_MP_PARAMETERS(VEGTYP,SOILTYP,SLOPETYP,SOILCOLOR,CROPTYPE,&
                 NoahMP401_struc(n)%noahmp401(t)%param)
-
+           if (t == 1) write(LIS_logunit,*) '[DBG] SMCMAX = ', NoahMP401_struc(n)%noahmp401(t)%param%smcmax
         enddo
    
      !optional read of Optimized parameters
