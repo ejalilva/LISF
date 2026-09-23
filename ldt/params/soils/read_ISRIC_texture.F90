@@ -191,8 +191,8 @@ subroutine read_ISRIC_texture( n, num_bins, fgrd, texture_layers )
    y_offset = nint((subparam_griddesc(4)-param_gridDesc(4))/&
         param_gridDesc(10)) + 1
   
-   read_inputparm = zval2(x_offset:x_offset+subpnc, &
-                          y_offset:y_offset+subpnr)
+   read_inputparm = zval2(x_offset:x_offset+subpnc-1, &
+                          y_offset:y_offset+subpnr-1)
   
    deallocate(zval2)
    deallocate(lat_line)
